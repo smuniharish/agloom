@@ -16,5 +16,6 @@ runtime policies, and lifecycle handling.
 | Hybrid | Compose two to four non-Hybrid topologies. |
 
 Use `pattern="planner"` to request a topology directly. A list such as
-`["planner", "supervisor"]` is an allow-list, not a composition. See the
-[topology specification](../architecture/TOPOLOGY_SPECIFICATION.md).
+`["planner", "supervisor"]` is an allow-list, not a composition. See
+[choosing an execution mode](../guides/execution.md) for practical selection
+guidance and Hybrid configuration.

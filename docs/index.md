@@ -26,7 +26,8 @@ benefits from tools, planning, workers, reflection, or explicit composition.
 - [Build your first agent](guides/quickstart.md)
 - Browse [topology concepts](concepts/topologies.md)
 - Review [examples and verified results](examples/overview.md)
-- Understand the [execution flow](architecture/ARCHITECTURE_OVERVIEW.md)
+- Learn how to [choose an execution mode](guides/execution.md)
+- Explore the complete [`create_agent()` reference](api/create-agent.md)
 
 ## Design
 
@@ -43,5 +44,5 @@ print(answer.content)
 An unconstrained agent uses its LLM to analyze requests against the configured
 capability inventory, then chooses DIRECT or a topology. Missing required
 capabilities fail explicitly. An explicit single pattern bypasses selection;
-an allow-list constrains automatic selection. See [pattern
-selection](architecture/PATTERN_SELECTION.md).
+an allow-list constrains automatic selection. See [choosing an execution
+mode](guides/execution.md).

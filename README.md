@@ -288,7 +288,7 @@ references—without maintaining host-specific copies.
 - [Capabilities](https://agloom.readthedocs.io/en/latest/concepts/capabilities/)
 - [Runtime and human approval](https://agloom.readthedocs.io/en/latest/concepts/runtime/)
 - [Observability](https://agloom.readthedocs.io/en/latest/concepts/observability/)
-- [Public API guide](https://agloom.readthedocs.io/en/latest/architecture/PUBLIC_API/)
+- [`create_agent()` API reference](https://agloom.readthedocs.io/en/latest/api/create-agent/)
 - [Agent Skills](https://agloom.readthedocs.io/en/latest/agent-skills/)
 - [Hosted documentation](https://agloom.readthedocs.io/en/latest/)
 - [GitHub repository](https://github.com/smuniharish/agloom)

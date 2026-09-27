@@ -1,9 +1,8 @@
 # Runtime, checkpointing, and approval
 
-Each `Agent` owns its event sink, active invocation cancellation signals,
-compiled graph cache, and recursion sessions. Applications may use a
-`RuntimeController` to coordinate cooperative stop across explicitly
-registered agents.
+Each `Agent` is isolated and can be invoked, streamed, paused, resumed, and
+stopped independently. Applications may use a `RuntimeController` to request
+cooperative cancellation across a known set of agents.
 
 LangGraph checkpointing is opt-in and requires a caller-provided checkpointer
 and a stable `configurable.thread_id`. Applications must also provide a
@@ -19,5 +18,5 @@ paused = agent.invoke(task, config=run_config)
 resumed = agent.invoke(Command(resume=True), config=run_config)
 ```
 
-See the [harness runtime](../architecture/HARNESS_RUNTIME.md), [lifecycle
-model](../architecture/LIFECYCLE_MODEL.md), and [HITL example](../examples/overview.md).
+See the [production runtime guide](../guides/production.md) and
+[HITL example](../examples/overview.md).

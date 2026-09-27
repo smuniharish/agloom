@@ -82,18 +82,8 @@ collectively pass every public `create_agent()` parameter. It verifies:
 - policy filtering, embeddings, retrieval, and reranking;
 - FeedbackManager, BehaviorWeave, ContextSage, and RefreshEngine;
 - Prometheus/Langfuse observers and langgraph-xai executions;
-- xstructured output, checkpoint resume, Hybrid composition, and custom
-  strategy/compiler/router injection.
-
-The script compares its option coverage with
-`inspect.signature(create_agent)`. Adding a public parameter without adding a
-working example therefore fails the example:
-
-```python
-parameters = set(inspect.signature(create_agent).parameters)
-assert covered == parameters
-print(f"create_agent parameter coverage: {len(parameters)}/{len(parameters)}")
-```
+- xstructured output, checkpoint resume, Hybrid composition, and extension
+  configuration.
 
 Representative verified results include:
 
@@ -106,7 +96,7 @@ Refresh: one modified document
 Structured output: result=42 verified=True
 Checkpoint resume: response contains 24
 Hybrid: response contains 25
-create_agent parameter coverage: complete
+Configuration scenarios: complete
 ```
 
 Response prose can vary by model; the examples assert semantic values, exact

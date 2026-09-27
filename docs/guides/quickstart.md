@@ -55,16 +55,12 @@ constrained = create_agent(
 
 Automatic and allow-list modes perform an analysis model call before execution.
 The analyzer sees configured tool names and descriptions, named capabilities,
-workers, and pipeline stages. For automatic execution it also generates a
-validated, task-specific blueprint with bounded worker roles, ordered stage
-instructions, execution success criteria, and Hybrid composition when needed.
-It rejects tasks that require unavailable capabilities instead of silently
-routing them to DIRECT. Explicit developer workers, stages, prompts, and
-composition override suggestions. Selection analysis is framework-managed and has no public replacement
-parameter.
+workers, and pipeline stages. It rejects tasks that require unavailable
+capabilities instead of silently routing them to DIRECT. Explicit developer
+workers, stages, prompts, and composition always take precedence.
 
 For composition, use the Hybrid topology and provide its child topologies
-explicitly. See [Hybrid](../architecture/HYBRID_TOPOLOGY.md).
+explicitly. See [choosing an execution mode](execution.md#hybrid-composition).
 
 Every agent is explainable by default through an isolated `langgraph-xai`
 runtime. Access it as `agent.xai`, or pass `xai_options` to override the

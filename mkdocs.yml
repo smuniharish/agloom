@@ -55,23 +55,14 @@ nav:
       - Capabilities: concepts/capabilities.md
       - Observability: concepts/observability.md
       - Runtime and HITL: concepts/runtime.md
-  - Behavior reference:
-      - Execution overview: architecture/ARCHITECTURE_OVERVIEW.md
-      - Pattern selection: architecture/PATTERN_SELECTION.md
-      - DIRECT execution: architecture/DIRECT_EXECUTION.md
-      - Topology semantics: architecture/TOPOLOGY_SPECIFICATION.md
-      - Hybrid composition: architecture/HYBRID_TOPOLOGY.md
-      - Recursive execution: architecture/RECURSIVE_EXECUTION.md
-      - Recursion policy: architecture/RECURSION_POLICY.md
-      - Capability flow: architecture/CAPABILITY_ARCHITECTURE.md
-      - Runtime lifecycle: architecture/HARNESS_RUNTIME.md
-      - Lifecycle states: architecture/LIFECYCLE_MODEL.md
-      - Events: architecture/EVENT_MODEL.md
-      - Isolation: architecture/ISOLATION_MODEL.md
-      - Errors: architecture/ERROR_MODEL.md
-      - Extension points: architecture/EXTENSIBILITY.md
-      - Dependencies: architecture/DEPENDENCY_MATRIX.md
-      - Terminology: architecture/TERMINOLOGY.md
-  - API:
-      - API guide: architecture/PUBLIC_API.md
-      - Python reference: api/reference.md
+  - Guides:
+      - Choosing an execution mode: guides/execution.md
+      - Configuration: guides/configuration.md
+      - Production runtime: guides/production.md
+  - API reference:
+      - create_agent: api/create-agent.md
+      - Agent: api/agent.md
+      - Configuration types: api/configuration.md
+      - Capabilities: api/capabilities.md
+      - Observability: api/observability.md
+      - Errors: api/errors.md

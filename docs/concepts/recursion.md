@@ -24,4 +24,4 @@ agent = create_agent(
 
 Depth, task count, worker count, and execution time limits apply to an
 invocation and its descendants. See the
-[recursion policy](../architecture/RECURSION_POLICY.md).
+[`RecursionPolicy` reference](../api/configuration.md#recursionpolicy).

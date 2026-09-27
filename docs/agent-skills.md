@@ -5,12 +5,10 @@ integrate, configure, debug, test, and extend the existing Agloom framework.
 The skill is procedural guidance, not a Python runtime component, execution
 topology, or replacement for `create_agent()`.
 
-| Component | Location |
-| --- | --- |
-| Agloom Python runtime | [`src/agloom/`](https://github.com/smuniharish/agloom/tree/master/src/agloom) |
-| Canonical Agent Skill | [`agloom-skills/skills/agloom/`](https://github.com/smuniharish/agloom/tree/master/agloom-skills/skills/agloom) |
-| Canonical instructions | [`SKILL.md`](https://github.com/smuniharish/agloom/blob/master/agloom-skills/skills/agloom/SKILL.md) |
-| Validation process | [`agloom-skills/validation/`](https://github.com/smuniharish/agloom/tree/master/agloom-skills/validation) |
+The
+[canonical Agent Skill](https://github.com/smuniharish/agloom/tree/master/agloom-skills/skills/agloom)
+is portable across compatible coding agents. Agloom maintains one authoritative
+copy instead of separate instructions for every host.
 
 The skill follows the
 [Agent Skills specification](https://agentskills.io/specification) and uses
@@ -124,6 +122,3 @@ Verify all of the following:
    can explicitly invoke the skill.
 5. An unrelated raw LangGraph or infrastructure-autoscaling task does not
    activate the skill merely because it mentions agents.
-
-The distribution's maintenance rules and task matrix are in
-[`agloom-skills/validation/README.md`](https://github.com/smuniharish/agloom/blob/master/agloom-skills/validation/README.md).

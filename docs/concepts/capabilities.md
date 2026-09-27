@@ -8,14 +8,10 @@ needed.
 
 ## Catalog and routing
 
-Every agent owns a `CapabilityRegistry` catalog. The registry is an abstract
-base class; Agloom uses `InMemoryCapabilityRegistry` unless the application
-supplies another implementation. Three providers populate it:
-
-- `LocalLangChainToolProvider` for `tools=`;
-- `ApplicationCapabilityProvider` for `capabilities=`;
-- `MCPCapabilityProvider` for MCP runtime objects and discovered MCP
-  capabilities.
+Each agent has its own capability catalog. Add LangChain tools through
+`tools=`, application services through `capabilities=`, and remote tools or
+resources through the MCP options. Agloom presents them through one selection
+and execution interface.
 
 The default router supports exact matching, a `CapabilityPolicy`, optional
 LangChain `Embeddings`, an optional `BaseRetriever`, and an optional
@@ -123,33 +119,10 @@ The supported upstream constructor arguments are:
   `multiple`, `multiple_envelopes`, `inject_instructions`, `repair`, and
   `repair_config`.
 
-MCP client registration and MCP capability discovery are runtime-managed.
-`invoke`, `stream`, `ainvoke`, and `astream` initialize a configured client
-automatically; no separate initialization call is required. A synchronous call
-made from inside an active event loop must be replaced with its async
-counterpart. Discovered MCP tools and resources support async execution. The current
-`mcp-capability-router` LangChain adapter does not list prompts, although known
-prompts remain retrievable through the application-owned MCP client. Agloom
-does not bypass its router with a competing prompt-discovery implementation.
+`invoke`, `stream`, `ainvoke`, and `astream` connect a configured MCP client
+when first needed, so applications do not need a separate initialization call.
+Use async execution for discovered MCP tools and resources. Known prompts
+remain available through the application-owned MCP client.
 
-## Complete integration verification
-
-The `examples/24_complete_configuration.py` example exercises every public
-`create_agent()` parameter across compatible configurations. Its primary agent
-combines local tools, policy filtering,
-embeddings, retrieval, reranking, ContextSage, FeedbackManager, BehaviorWeave,
-MCP tool/resource/prompt access, RefreshEngine, langgraph-xai, xstructured,
-observers, and custom strategy/compiler instances. Additional executions cover
-checkpoint interrupts, Hybrid composition, a custom capability router,
-explicit explainability injection, and disabled xAI.
-
-The example asserts semantic results for each subsystem and compares its option
-coverage against `inspect.signature(create_agent)`, so a newly added public
-parameter causes the example to fail until it is demonstrated. Automated tests
-also construct every one of the 128 enabled/disabled combinations of the seven
-ecosystem integrations.
-Constructor mappings use the currently supported package signatures listed
-above; package version upgrades should be validated against these public APIs.
-
-The [capability architecture](../architecture/CAPABILITY_ARCHITECTURE.md)
-documents the integration boundaries.
+See the [capability API](../api/capabilities.md) for supported extension
+contracts and their parameters.
