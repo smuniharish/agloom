@@ -1,15 +1,91 @@
+# Python environments
 .venv/
 venv/
+env/
+ENV/
+
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
+*$py.class
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 .pyrefly/
-site/
-dist/
+.hypothesis/
+.tox/
+.nox/
+
+# Coverage and profiling
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+*.cover
+*.py,cover
+.memray/
+*.prof
+
+# Python packaging and documentation builds
 build/
+dist/
+site/
 *.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# JavaScript dependencies, caches, and builds
+node_modules/
+.npm/
+.yarn/
+.pnpm-store/
+.vite/
+.parcel-cache/
+.next/
+coverage/
+*.tsbuildinfo
+*.local
+
+# Environment files and local credentials
 .env
 .env.*
 !.env.example
+!**/.env.example
+
+# Logs and process state
+*.log
+*.log.*
+*.pid
+*.pid.lock
+logs/
+
+# Local runtime and container data
 observability/data/
+**/.cache/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# Operating system metadata
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Test and tool reports
+junit.xml
+test-results/
+playwright-report/
+blob-report/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
