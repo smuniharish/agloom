@@ -12,6 +12,7 @@ agent workloads.
 [Quickstart](https://agloom.readthedocs.io/en/latest/guides/quickstart/) |
 [Examples](https://agloom.readthedocs.io/en/latest/examples/overview/) |
 [API reference](https://agloom.readthedocs.io/en/latest/api/reference/) |
+[Agent Skills](https://agloom.readthedocs.io/en/latest/agent-skills/) |
 [GitHub](https://github.com/smuniharish/agloom)
 
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
@@ -263,6 +264,21 @@ See [examples and verified
 results](https://agloom.readthedocs.io/en/latest/examples/overview/) for executable
 snippets, semantic assertions, and expected outcomes.
 
+## Agent Skills
+
+Agloom publishes one portable
+[Agent Skill](https://agloom.readthedocs.io/en/latest/agent-skills/) for coding
+agents that integrate, configure, debug, test, or extend the framework:
+
+```bash
+npx skills add https://github.com/smuniharish/agloom/tree/master/agloom-skills/skills/agloom
+```
+
+The canonical distribution works with Agent Skills-compatible hosts, including
+Claude Code, Codex, Cursor, and GitHub Copilot. It provides one `SKILL.md` plus
+focused architecture, configuration, integration, and troubleshooting
+references—without maintaining host-specific copies.
+
 ## Documentation
 
 - [Why Agloom?](https://agloom.readthedocs.io/en/latest/guides/why-agloom/)
@@ -273,6 +289,7 @@ snippets, semantic assertions, and expected outcomes.
 - [Runtime and human approval](https://agloom.readthedocs.io/en/latest/concepts/runtime/)
 - [Observability](https://agloom.readthedocs.io/en/latest/concepts/observability/)
 - [Public API guide](https://agloom.readthedocs.io/en/latest/architecture/PUBLIC_API/)
+- [Agent Skills](https://agloom.readthedocs.io/en/latest/agent-skills/)
 - [Hosted documentation](https://agloom.readthedocs.io/en/latest/)
 - [GitHub repository](https://github.com/smuniharish/agloom)
 

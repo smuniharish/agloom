@@ -16,7 +16,8 @@ benefits from tools, planning, workers, reflection, or explicit composition.
   policy-aware catalog;
 - bounded recursive execution, streaming, checkpointing, and human approval;
 - Prometheus, Grafana, Langfuse, and langgraph-xai observability;
-- structured output through xstructured.
+- structured output through xstructured;
+- a portable [Agent Skill](agent-skills.md) for coding-agent integrations.
 
 ## Start here
 
