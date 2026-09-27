@@ -1,0 +1,63 @@
+[
+  {
+    "id": "IT-101",
+    "title": "Account access and device security",
+    "owner": "IT Operations",
+    "updated": "2026-06-12",
+    "sections": [
+      {"heading": "New starter access", "text": "A manager submits a starter request in the IT portal at least five business days before the start date. IT provisions the identity account and standard SSO applications. The manager approves any privileged access separately; new starters must never share credentials."},
+      {"heading": "Lost device", "text": "Report a lost company device to the IT security queue immediately and call the service desk if outside business hours. IT remotely locks the device, revokes active sessions, and coordinates a replacement. Do not attempt to recover a device in an unsafe location."},
+      {"heading": "Multi-factor authentication", "text": "All workforce accounts require MFA. If a registered factor is unavailable, contact the service desk for identity verification and a temporary recovery method. Never approve an unexpected MFA prompt."}
+    ]
+  },
+  {
+    "id": "SEC-205",
+    "title": "Security incident reporting",
+    "owner": "Security Operations",
+    "updated": "2026-07-03",
+    "sections": [
+      {"heading": "Report a suspected incident", "text": "Report suspicious emails, exposed data, or unauthorized access through the Security Incident form in the employee portal immediately. For an active breach, call the 24-hour security on-call number listed in the portal. Include the time, affected systems, and what you observed; do not attach secrets or customer data to chat messages."},
+      {"heading": "Triage and escalation", "text": "Security Operations assigns severity and opens an incident record. Severity 1 incidents page the incident commander immediately; the commander coordinates containment and customer communication with Legal and Communications. Employees should not independently notify customers."}
+    ]
+  },
+  {
+    "id": "HR-310",
+    "title": "Time off and leave",
+    "owner": "People Operations",
+    "updated": "2026-04-18",
+    "sections": [
+      {"heading": "Planned vacation", "text": "Submit planned vacation in the HR portal before booking travel. The manager approves based on coverage and the employee can view remaining balance in the portal. Requests of five or more working days should be submitted at least four weeks ahead."},
+      {"heading": "Sick leave", "text": "Notify your manager as soon as practical and log sick leave in the HR portal when able. Do not put medical details in the team calendar. People Operations can provide confidential guidance on extended leave and local requirements."}
+    ]
+  },
+  {
+    "id": "FIN-420",
+    "title": "Travel and expense reimbursement",
+    "owner": "Finance",
+    "updated": "2026-05-09",
+    "sections": [
+      {"heading": "Travel approval", "text": "Obtain manager approval in the travel portal before booking business travel. International travel also requires Finance approval. Book within the approved budget and use the company booking tool when available."},
+      {"heading": "Expense claims", "text": "Submit itemized receipts in the expense portal within 30 calendar days of the purchase. Enter the business purpose and cost center; a manager approves the claim before Finance processes reimbursement. Personal purchases are not reimbursable."}
+    ]
+  },
+  {
+    "id": "ENG-530",
+    "title": "Production deployment and rollback",
+    "owner": "Platform Engineering",
+    "updated": "2026-08-22",
+    "sections": [
+      {"heading": "Release readiness", "text": "Production changes require a reviewed pull request, passing CI, an owner, and a documented rollback plan. Announce the deployment in the release channel before starting. High-risk changes require a change ticket and on-call approval."},
+      {"heading": "Rollback", "text": "If error rate or latency crosses the service alert threshold after release, the deploy owner stops the rollout and invokes the documented rollback. Notify the on-call engineer and post an incident update in the release channel. Verify service health after rollback before closing the change."}
+    ]
+  },
+  {
+    "id": "DATA-640",
+    "title": "Customer data handling",
+    "owner": "Privacy Office",
+    "updated": "2026-03-27",
+    "sections": [
+      {"heading": "Access and sharing", "text": "Access customer data only for an approved business purpose using role-based access. Do not copy production customer data to personal devices, public AI tools, or unapproved cloud storage. Share only the minimum necessary data using approved company systems."},
+      {"heading": "Retention and deletion", "text": "Follow the dataset retention schedule in the data catalog. Submit deletion requests through the Privacy queue; do not promise a deletion deadline to a customer before Privacy verifies contractual and legal obligations."}
+    ]
+  }
+]

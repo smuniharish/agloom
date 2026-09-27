@@ -1,0 +1,17 @@
+.git
+.venv
+venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.pyrefly
+**/node_modules
+**/dist
+site
+dist
+build
+*.egg-info
+.env
+.env.*
+observability/data

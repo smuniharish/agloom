@@ -1,0 +1,26 @@
+FROM mcr.microsoft.com/playwright:v1.55.0-noble
+COPY --from=ghcr.io/astral-sh/uv:0.12.15 /uv /uvx /bin/
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH="/opt/venv/bin:${PATH}" \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+WORKDIR /workspace
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml README.md LICENSE /workspace/
+COPY src /workspace/src
+COPY examples/web_compliance_auditor /workspace/examples/web_compliance_auditor
+RUN uv sync \
+       --project examples/web_compliance_auditor \
+       --frozen \
+       --no-dev \
+    && npm install --global \
+       @playwright/mcp@0.0.82 \
+       @modelcontextprotocol/server-filesystem@2026.8.31 \
+       @modelcontextprotocol/server-everything@2026.8.31 \
+    && npx playwright install chromium \
+    && ln -s "$(find /ms-playwright -type f -path '*/chrome-linux64/chrome' | head -n1)" \
+       /usr/local/bin/agloom-chromium
+WORKDIR /workspace/examples/web_compliance_auditor
+EXPOSE 8003 9467
+CMD ["uvicorn","backend.app:app","--host","0.0.0.0","--port","8003"]

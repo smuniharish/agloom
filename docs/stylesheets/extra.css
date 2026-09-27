@@ -1,0 +1,20 @@
+.md-typeset img[src*="/diagrams/"],
+.md-typeset .agloom-diagram img {
+  display: block;
+  width: min(100%, 72rem);
+  height: auto;
+  margin: 1.5rem auto;
+  padding: 1rem;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.4rem;
+  background: #ffffff;
+}
+
+.md-typeset .agloom-diagram {
+  display: block;
+}
+
+.md-typeset table:not([class]) {
+  display: table;
+  width: 100%;
+}

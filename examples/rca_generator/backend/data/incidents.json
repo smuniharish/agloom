@@ -1,0 +1,36 @@
+[
+  {
+    "id": "INC-2026-041",
+    "title": "Checkout errors after connection pool rollout",
+    "description": "Checkout requests failed during the evening release.",
+    "service": "checkout-api",
+    "severity": "SEV-1",
+    "status": "resolved",
+    "started_at": "2026-09-18T18:04:00Z",
+    "impact": "Checkout 5xx responses increased for 31 minutes; payment capture was not affected.",
+    "records": [
+      {"id": "INC-2026-041-I1", "kind": "incident", "timestamp": "2026-09-18T18:02:00Z", "text": "Deployment checkout-api v4.8.2 set database pool max connections from 80 to 12 per pod."},
+      {"id": "INC-2026-041-L1", "kind": "log", "timestamp": "2026-09-18T18:05:00Z", "text": "checkout-api: timeout waiting for DB connection after 2000ms (pool exhausted)."},
+      {"id": "INC-2026-041-L2", "kind": "log", "timestamp": "2026-09-18T18:12:00Z", "text": "checkout-api: retry budget exhausted while acquiring DB connection."},
+      {"id": "INC-2026-041-M1", "kind": "metric", "timestamp": "2026-09-18T18:10:00Z", "text": "checkout_http_5xx_rate peaked at 18.4%; baseline 0.2%."},
+      {"id": "INC-2026-041-M2", "kind": "metric", "timestamp": "2026-09-18T18:10:00Z", "text": "db_pool_wait_p95_ms rose from 24 to 2000; active connections at 12/12 per pod."},
+      {"id": "INC-2026-041-I2", "kind": "incident", "timestamp": "2026-09-18T18:34:00Z", "text": "Rollback restored pool max connections to 80; 5xx rate returned below 0.3% by 18:35 UTC."}
+    ]
+  },
+  {
+    "id": "INC-2026-052",
+    "title": "Ingest lag during broker partition imbalance",
+    "description": "Events accumulated in the ingestion queue during morning traffic.",
+    "service": "event-ingest",
+    "severity": "SEV-2",
+    "status": "resolved",
+    "started_at": "2026-09-23T08:11:00Z",
+    "impact": "Event ingestion delayed up to 14 minutes; no confirmed event loss.",
+    "records": [
+      {"id": "INC-2026-052-I1", "kind": "incident", "timestamp": "2026-09-23T08:05:00Z", "text": "Partition reassignment concentrated 8 of 12 event partitions on broker-03."},
+      {"id": "INC-2026-052-L1", "kind": "log", "timestamp": "2026-09-23T08:14:00Z", "text": "broker-03: produce request queue saturated, throttling incoming messages."},
+      {"id": "INC-2026-052-M1", "kind": "metric", "timestamp": "2026-09-23T08:19:00Z", "text": "broker-03 CPU reached 97%; brokers 01/02 below 40%; consumer lag peaked at 14 minutes."},
+      {"id": "INC-2026-052-I2", "kind": "incident", "timestamp": "2026-09-23T08:47:00Z", "text": "Partitions redistributed evenly across three brokers; consumer lag recovered by 09:02 UTC."}
+    ]
+  }
+]

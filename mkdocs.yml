@@ -1,0 +1,76 @@
+site_name: Agloom
+site_description: Production-grade Python agent harness that automatically classifies tasks, optimizes execution, and scales orchestration across eight specialized topologies.
+site_url: https://agloom.readthedocs.io/en/latest/
+repo_name: agloom
+repo_url: https://github.com/smuniharish/agloom
+docs_dir: docs
+site_dir: site
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_root_full_path: false
+            show_object_full_path: false
+            show_source: false
+            inherited_members: false
+            members_order: source
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Why Agloom?: guides/why-agloom.md
+      - Installation: guides/installation.md
+      - Quickstart: guides/quickstart.md
+      - Examples and verified results: examples/overview.md
+  - Concepts:
+      - Topologies: concepts/topologies.md
+      - Recursion: concepts/recursion.md
+      - Capabilities: concepts/capabilities.md
+      - Observability: concepts/observability.md
+      - Runtime and HITL: concepts/runtime.md
+  - Behavior reference:
+      - Execution overview: architecture/ARCHITECTURE_OVERVIEW.md
+      - Pattern selection: architecture/PATTERN_SELECTION.md
+      - DIRECT execution: architecture/DIRECT_EXECUTION.md
+      - Topology semantics: architecture/TOPOLOGY_SPECIFICATION.md
+      - Hybrid composition: architecture/HYBRID_TOPOLOGY.md
+      - Recursive execution: architecture/RECURSIVE_EXECUTION.md
+      - Recursion policy: architecture/RECURSION_POLICY.md
+      - Capability flow: architecture/CAPABILITY_ARCHITECTURE.md
+      - Runtime lifecycle: architecture/HARNESS_RUNTIME.md
+      - Lifecycle states: architecture/LIFECYCLE_MODEL.md
+      - Events: architecture/EVENT_MODEL.md
+      - Isolation: architecture/ISOLATION_MODEL.md
+      - Errors: architecture/ERROR_MODEL.md
+      - Extension points: architecture/EXTENSIBILITY.md
+      - Dependencies: architecture/DEPENDENCY_MATRIX.md
+      - Terminology: architecture/TERMINOLOGY.md
+  - API:
+      - API guide: architecture/PUBLIC_API.md
+      - Python reference: api/reference.md

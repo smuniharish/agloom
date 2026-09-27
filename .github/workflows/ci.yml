@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+      - name: Install
+        run: uv sync --group dev
+      - name: Lint
+        run: uv run ruff check .
+      - name: Formatting
+        run: uv run black --check src tests examples
+      - name: Types
+        run: uv run pyrefly check
+      - name: Tests
+        run: uv run pytest
+      - name: Documentation
+        run: uv run mkdocs build --strict
+      - name: Build distributions
+        run: uv build
+      - name: Verify clean wheel installation
+        shell: bash
+        run: |
+          python -m venv /tmp/agloom-wheel-env
+          /tmp/agloom-wheel-env/bin/python -m pip install dist/*.whl
+          /tmp/agloom-wheel-env/bin/python -c "from agloom import create_agent; print(create_agent.__name__)"

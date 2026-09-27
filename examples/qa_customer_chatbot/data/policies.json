@@ -1,0 +1,6 @@
+[
+  {"id": "POL-RETURNS", "title": "Returns", "text": "Unused items may be returned within 30 days of delivery with proof of purchase. Contact support to start a return. Refunds are issued to the original payment method after inspection."},
+  {"id": "POL-SHIPPING", "title": "Shipping and tracking", "text": "Estimated delivery dates are estimates, not guarantees. Check the latest order status before contacting support about a delayed shipment. Tracking links are not available in this demo."},
+  {"id": "POL-ADDRESS", "title": "Delivery address changes", "text": "Contact support to request an address change before an order ships. An address change is not guaranteed after an order is in transit. This chatbot cannot change an address."},
+  {"id": "POL-PRIVACY", "title": "Account privacy", "text": "Never share payment card numbers or passwords in chat. Order lookups in this demo use seeded customer IDs only; a production service must verify customer identity before revealing orders."}
+]

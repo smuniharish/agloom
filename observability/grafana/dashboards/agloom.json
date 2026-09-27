@@ -1,0 +1,54 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [{"expr": "sum by (__name__, status, topology) ({__name__=~\"agloom_(enterprise_knowledge_assistant|qa_customer_chatbot|rca_generator|web_compliance_auditor|engineering_change_investigator)_executions_total\"})", "refId": "A"}],
+      "title": "Executions by Application",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "id": 2,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (__name__, le, topology) (rate({__name__=~\"agloom_(enterprise_knowledge_assistant|qa_customer_chatbot|rca_generator|web_compliance_auditor|engineering_change_investigator)_execution_duration_seconds_bucket\"}[5m])))", "refId": "A"}],
+      "title": "p95 Execution Duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "id": 3,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [{"expr": "sum by (__name__) ({__name__=~\"agloom_(enterprise_knowledge_assistant|qa_customer_chatbot|rca_generator|web_compliance_auditor|engineering_change_investigator)_active_executions\"})", "refId": "A"}],
+      "title": "Active Executions by Application",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "id": 4,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+      "targets": [{"expr": "sum by (__name__, event, topology) ({__name__=~\"agloom_(enterprise_knowledge_assistant|qa_customer_chatbot|rca_generator|web_compliance_auditor|engineering_change_investigator)_events_total\"})", "refId": "A"}],
+      "title": "Governance and Runtime Events",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 41,
+  "tags": ["agloom"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "browser",
+  "title": "Agloom Runtime",
+  "uid": "agloom-runtime",
+  "version": 1
+}

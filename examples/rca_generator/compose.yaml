@@ -1,0 +1,20 @@
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: examples/rca_generator/backend.Containerfile
+    environment:
+      EXPLABS_API_KEY: ${EXPLABS_API_KEY:?Set EXPLABS_API_KEY}
+      EXPLABS_BASE_URL: ${EXPLABS_BASE_URL:-https://api.experientiallabs.ai/v1}
+      EXPLABS_MODEL: ${EXPLABS_MODEL:-gpt-5.6-luna}
+    ports:
+      - "8103:8000"
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: examples/rca_generator/frontend.Containerfile
+    depends_on:
+      - backend
+    ports:
+      - "3103:80"

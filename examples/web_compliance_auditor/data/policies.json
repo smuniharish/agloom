@@ -1,0 +1,5 @@
+[
+  {"id":"WEB-ACCESS-001","title":"Accessible public interfaces","body":"Public pages must provide a descriptive document title, keyboard-accessible controls, and meaningful labels for user inputs."},
+  {"id":"WEB-PRIVACY-002","title":"Data collection notice","body":"Pages that collect personal information must identify the purpose of collection and link to the current privacy notice before submission."},
+  {"id":"WEB-SECURITY-003","title":"Transport protection","body":"Public application pages and forms must be delivered over HTTPS. Passwords, tokens, and personal data must never be exposed in page text or URLs."}
+]

@@ -1,0 +1,82 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agloom"
+version = "0.1.0"
+description = "Production-grade Python agent harness that automatically classifies tasks, optimizes execution, and scales orchestration across eight specialized topologies."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+authors = [{ name = "S Muni Harish", email = "samamuniharish@gmail.com" }]
+keywords = ["agents", "langchain", "langgraph", "orchestration", "topology"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Framework :: AsyncIO",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
+]
+
+dependencies = [
+  "langchain>=1.0,<2.0",
+  "langchain-openai>=1.0,<2.0",
+  "langgraph>=1.2.11,<1.3",
+  "langfuse>=3.0,<4.0",
+  "prometheus-client>=0.22,<1.0",
+  "pydantic>=2.12,<3",
+  "structlog>=25.5,<26",
+  "feedback-manager>=0.1,<0.2",
+  "behaviorweave>=0.1,<0.2",
+  "contextsage>=0.1,<0.2",
+  "mcp-capability-router[mcp]>=0.1,<0.2",
+  "refresh-engine>=0.1,<0.2",
+  "langgraph-xai>=0.1,<0.2",
+  "xstructured>=0.1,<0.2",
+]
+
+[project.urls]
+Homepage = "https://agloom.readthedocs.io/en/latest/"
+Documentation = "https://agloom.readthedocs.io/en/latest/"
+Source = "https://github.com/smuniharish/agloom"
+Issues = "https://github.com/smuniharish/agloom/issues"
+
+[dependency-groups]
+dev = [
+  "black>=25.1",
+  "mkdocs-material>=9.6",
+  "mkdocstrings[python]>=0.28",
+  "pytest>=8.3",
+  "pytest-asyncio>=0.25",
+  "pyrefly>=0.18",
+  "ruff>=0.11",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agloom"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = [
+  "error::DeprecationWarning",
+  "error::PendingDeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.pyrefly]
+project-includes = ["src/**/*.py"]

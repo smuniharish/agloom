@@ -1,0 +1,24 @@
+[project]
+name = "agloom-engineering-change-investigator"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "agloom",
+  "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
+  "pgvector>=0.4,<1",
+  "psycopg[binary,pool]>=3.2,<4",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8,<10",
+  "pytest-asyncio>=0.25,<2",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+agloom = { path = "../..", editable = true }

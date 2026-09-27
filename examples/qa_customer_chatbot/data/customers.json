@@ -1,0 +1,17 @@
+[
+  {
+    "id": "CUST-1024",
+    "name": "Alex Rivera",
+    "orders": [
+      {"id": "ORD-5001", "status": "in transit", "item": "Travel backpack", "estimated_delivery": "2026-10-02"},
+      {"id": "ORD-5002", "status": "delivered", "item": "Water bottle", "estimated_delivery": "2026-09-19"}
+    ]
+  },
+  {
+    "id": "CUST-2048",
+    "name": "Morgan Lee",
+    "orders": [
+      {"id": "ORD-6001", "status": "processing", "item": "Desk lamp", "estimated_delivery": "2026-10-06"}
+    ]
+  }
+]

@@ -1,0 +1,83 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "ollama serve & pid=$$!; sleep 3; ollama pull all-minilm; wait $$pid"
+    healthcheck:
+      test: ["CMD", "ollama", "show", "all-minilm"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    ports:
+      - "11436:11434"
+    volumes:
+      - engineering-ollama:/root/.ollama
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: agloom
+      POSTGRES_PASSWORD: agloom
+      POSTGRES_DB: engineering
+    ports:
+      - "55434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agloom -d engineering"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - engineering-postgres:/var/lib/postgresql/data
+  target-site:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./target:/usr/share/nginx/html:ro
+  backend:
+    build:
+      context: ../..
+      dockerfile: examples/engineering_change_investigator/backend/Containerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://agloom:agloom@postgres:5432/engineering
+      TARGET_SITE_URL: http://target-site
+      AGLOOM_METRICS_HOST: 0.0.0.0
+      AGLOOM_METRICS_PORT: 9468
+      AGLOOM_OBSERVABILITY_ENABLED: "true"
+      EXPLABS_API_KEY: ${EXPLABS_API_KEY:?Set EXPLABS_API_KEY}
+      EXPLABS_BASE_URL: ${EXPLABS_BASE_URL:-https://api.experientiallabs.ai/v1}
+      EXPLABS_MODEL: ${EXPLABS_MODEL:-gpt-5.6-luna}
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_EMBED_MODEL: all-minilm
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://langfuse-web:3000}
+    ports:
+      - "8004:8000"
+      - "9468:9468"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      target-site:
+        condition: service_started
+    networks:
+      default: {}
+      observability:
+        aliases: [engineering-change-api]
+  frontend:
+    build:
+      context: ../..
+      dockerfile: examples/engineering_change_investigator/frontend/Containerfile
+    ports:
+      - "5177:80"
+    depends_on: [backend]
+volumes:
+  engineering-postgres:
+  engineering-ollama:
+networks:
+  observability:
+    external: true
+    name: agloom-observability_default
