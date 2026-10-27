@@ -1,0 +1,31 @@
+---
+config:
+  elk:
+    nodePlacementStrategy: NETWORK_SIMPLEX
+---
+%% Observability: the EventName catalog, observers, and the LangGraph custom stream.
+flowchart TD
+  subgraph catalog ["EventName catalog"]
+    direction TB
+    execution["<b>Execution</b><br/>AgentCreated · ExecutionStarted<br/>ExecutionCompleted · ExecutionPaused<br/>ExecutionFailed · ExecutionCancelled"]
+    selection["<b>Selection</b><br/>CapabilitiesRouted · TopologySelectionStarted<br/>TopologySelected · DirectExecutionStarted"]
+    policy["<b>Policy</b><br/>ToolCallDenied · ApprovalRequired<br/>ActionExecuted · ActionReplayed · ActionFailed"]
+    loop["<b>Loop</b><br/>LoopStarted · LoopIterationStarted<br/>LoopIterationCompleted · LoopRefreshed<br/>LoopPaused · LoopCompleted · LoopTerminated"]
+    execution ~~~ selection ~~~ policy ~~~ loop
+  end
+  event("AgentEvent<br/><small>name · agent_id · run_id · topology · payload</small>")
+  stream("LangGraph custom stream<br/><small>stream_mode=&quot;custom&quot;</small>")
+  observers("observers=[...]<br/><small>failures are isolated and logged</small>")
+  logging("LoggingObserver<br/><small>structlog</small>")
+  prometheus("PrometheusObserver<br/><small>metrics</small>")
+  langfuse("LangfuseObserver<br/><small>events + callback traces<br/>of model and tool runs</small>")
+  callable("Plain callable<br/><small>fn(event)</small>")
+
+  catalog --> event
+  event --> observers
+  event --> stream
+  observers --> logging & prometheus
+  observers --> langfuse & callable
+
+  class execution,selection,policy,loop list
+  class logging,prometheus,langfuse,callable,stream ext

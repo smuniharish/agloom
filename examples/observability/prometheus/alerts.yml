@@ -1,0 +1,80 @@
+groups:
+  - name: agloom
+    rules:
+      - alert: AgloomMetricsTargetDown
+        expr: up{job=~"agloom-.*|web-compliance-auditor|engineering-change-investigator|autonomous-product-studio|continuous-evidence-lab"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agloom metrics target {{ $labels.job }} is unavailable"
+          description: "Prometheus has failed to scrape this target for at least 2 minutes."
+
+      - alert: AgloomExecutionFailureRatioHigh
+        expr: |
+          (
+            sum by (job) (
+              rate({__name__=~"agloom(_.+)?_executions_total", status="failed"}[10m])
+            )
+            /
+            clamp_min(
+              sum by (job) (rate({__name__=~"agloom(_.+)?_executions_total"}[10m])),
+              1e-9
+            )
+          ) > 0.05
+          and
+          sum by (job) (
+            increase({__name__=~"agloom(_.+)?_executions_total"}[10m])
+          ) >= 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agloom execution failures exceed 5% for {{ $labels.job }}"
+          description: "At least 20 executions finished in 10 minutes and more than 5% failed for 5 minutes. Investigate the application and its model and tool dependencies."
+
+      - alert: AgloomConsequentialActionFailed
+        expr: |
+          sum by (job, tool) (
+            increase({__name__=~"agloom(_.+)?_policy_actions_total", outcome="failed"}[10m])
+          ) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Consequential action {{ $labels.tool }} failed in {{ $labels.job }}"
+          description: "The action's outcome is unknown, so the Policy Manager refuses to retry it automatically. Check the external system and reconcile the action in the agentbarrier store."
+
+      - alert: AgloomPolicyDenialsHigh
+        expr: |
+          sum by (job, tool) (
+            increase({__name__=~"agloom(_.+)?_policy_actions_total", outcome="denied"}[10m])
+          ) >= 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Calls to {{ $labels.tool }} are repeatedly denied in {{ $labels.job }}"
+          description: "The agent keeps requesting a tool that the policy denies. Review the policy rules or the instructions that lead the model to request it."
+
+      - alert: AgloomLoopsStopWithoutObjective
+        expr: |
+          (
+            sum by (job) (
+              rate({__name__=~"agloom(_.+)?_loop_terminations_total", reason=~"iteration_limit|timeout|tool_call_limit|retry_limit|replan_limit|stagnation|oscillation"}[30m])
+            )
+            /
+            clamp_min(
+              sum by (job) (rate({__name__=~"agloom(_.+)?_loop_terminations_total"}[30m])),
+              1e-9
+            )
+          ) > 0.25
+          and
+          sum by (job) (
+            increase({__name__=~"agloom(_.+)?_loop_terminations_total"}[30m])
+          ) >= 20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over 25% of loops in {{ $labels.job }} stop before reaching the objective"
+          description: "Loops end on budgets, stagnation, or oscillation. Review the loop policy budgets, the success criteria, and the evaluator feedback."

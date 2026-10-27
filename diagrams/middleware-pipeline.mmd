@@ -1,0 +1,24 @@
+---
+config:
+  elk:
+    nodePlacementStrategy: NETWORK_SIMPLEX
+---
+%% Middleware order for every tool-capable agent, and the behavior_signals bridge into Loop Engineering.
+flowchart TD
+  request(["Model call or tool call"])
+  routing("Capability routing<br/><small>outermost · routed tools · cancellation · tool budget</small>")
+  subgraph yours ["Your middleware, in the order you pass it"]
+    contextsage("IntelligentSummarizationMiddleware<br/><small>ContextSage</small>")
+    behaviorweave("BehaviorWeaveMiddleware<br/><small>BehaviorWeave</small>")
+    pii("PIIMiddleware<br/><small>LangChain</small>")
+    contextsage --> behaviorweave --> pii
+  end
+  policy("PolicyManager<br/><small>innermost · allow · deny · approval · exactly-once</small>")
+  tool[["Tool"]]
+  loop("Loop Engineering<br/><small>stop → STOP · pause → WAIT<br/>human_review, escalate → HUMAN_INTERVENTION<br/>redirect → REPLAN · retry → RETRY</small>")
+
+  request --> routing --> yours --> policy --> tool
+  behaviorweave -. "on_decision=behavior_signals" .-> loop
+
+  class request api
+  class contextsage,behaviorweave,pii,tool ext

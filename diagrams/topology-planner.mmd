@@ -1,0 +1,20 @@
+%% Planner topology: a dependency-aware plan executed in parallel waves.
+flowchart TD
+  start@{ shape: sm-circ }
+  plan{{"plan<br/><small>at most max_plan_steps steps, no cycles<br/>one correction round when invalid</small>"}}
+  step@{ shape: procs, label: "step<br/><small>at most max_workers in parallel</small>" }
+  join("join")
+  synthesize("synthesize")
+  stop@{ shape: fr-circ }
+  note["Each step is a tool-capable sub-agent, or a recursive<br/>child execution when ExecutionLimits.max_depth > 0"]
+
+  start --> plan
+  plan -- "Send each ready step" --> step
+  step --> join
+  join -- "next wave" --> step
+  join -- "all steps done" --> synthesize
+  synthesize --> stop
+  stop ~~~ note
+
+  class plan,step,synthesize model
+  class note note

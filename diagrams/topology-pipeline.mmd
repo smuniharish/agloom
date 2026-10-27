@@ -1,0 +1,15 @@
+%% Pipeline topology: ordered stages; the default stages are shown.
+flowchart LR
+  start@{ shape: sm-circ }
+  subgraph stages ["Default stages · yours run as stage_&lt;i&gt;_&lt;name&gt;"]
+    analyze("stage_0_analyze")
+    draft("stage_1_draft")
+    finalize("stage_2_finalize")
+    analyze --> draft --> finalize
+  end
+  stop@{ shape: fr-circ }
+
+  start --> analyze
+  finalize --> stop
+
+  class analyze,draft,finalize model

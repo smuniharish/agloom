@@ -7,26 +7,44 @@ import json
 import logging
 import os
 import re
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import Protocol
 from uuid import UUID, uuid4
 
+from agentbarrier.runtime import (
+    PolicyEffect,
+    PolicyRule,
+    RuntimePolicy,
+    SQLiteRuntimeStore,
+)
 from fastapi import FastAPI, HTTPException
-from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.tools import tool
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.tools import BaseTool, tool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
-from agloom import application_observers, create_agent, observability_status
+from agloom import (
+    Agent,
+    AgloomError,
+    ExecutionLimits,
+    Observer,
+    PolicyManager,
+    create_agent,
+)
 from backend.knowledge import KnowledgeBase, Passage
+from backend.observability import Telemetry, observability_status, start_telemetry
 
 log = logging.getLogger(__name__)
+SERVICE_ID = "enterprise-knowledge-assistant"
+TENANT_ID = "demo-enterprise"
+METRICS_NAMESPACE = "enterprise_knowledge_assistant"
+METRICS_PORT = 9464
 SOURCE_ID = re.compile(r"\[([A-Z]+-\d+-\d+)\]")
 MAX_CONVERSATIONS = 100
 MAX_TURNS = 12
-METRICS_PORT = 9464
 seen_passages: ContextVar[set[str] | None] = ContextVar("seen_passages", default=None)
 
 SYSTEM_PROMPT = (
@@ -39,9 +57,26 @@ SYSTEM_PROMPT = (
     "may provide context but is not evidence for the current answer."
 )
 
+# Both tools only read the bundled knowledge base, so neither is consequential.
+# agentbarrier denies every tool that no rule allows.
+TOOL_POLICY = RuntimePolicy(
+    version="enterprise-knowledge-assistant-v1",
+    rules=(
+        PolicyRule(
+            "search approved knowledge", PolicyEffect.ALLOW, tool="search_knowledge"
+        ),
+        PolicyRule("read approved passages", PolicyEffect.ALLOW, tool="read_passage"),
+    ),
+)
+
 
 class AgentRunner(Protocol):
-    def invoke(self, input: list[HumanMessage | AIMessage]) -> object: ...
+    async def ainvoke(self, input: Sequence[BaseMessage]) -> object: ...
+
+    def close(self) -> None: ...
+
+
+AgentFactory = Callable[[KnowledgeBase, PolicyManager, Sequence[Observer]], AgentRunner]
 
 
 class ChatRequest(BaseModel):
@@ -60,11 +95,35 @@ class Conversation(BaseModel):
     messages: list[dict[str, str]]
 
 
-def make_agent(knowledge: KnowledgeBase) -> AgentRunner:
+def tool_policy() -> PolicyManager:
+    return PolicyManager(
+        policy=TOOL_POLICY,
+        # Read-only calls are checked statelessly; the store records no actions.
+        store=SQLiteRuntimeStore(":memory:"),
+        namespace=SERVICE_ID,
+        organization_id=TENANT_ID,
+        requested_by=SERVICE_ID,
+        on_denied="inform_model",
+    )
+
+
+def policy_summary() -> dict[str, object]:
+    return {
+        "version": TOOL_POLICY.version,
+        "default_effect": TOOL_POLICY.default_effect.value,
+        "rules": [
+            {"name": rule.name, "effect": rule.effect.value, "tool": rule.tool}
+            for rule in TOOL_POLICY.rules
+        ],
+        "consequential_tools": [],
+    }
+
+
+def chat_model() -> BaseChatModel:
     key = os.getenv("EXPLABS_API_KEY")
     if not key:
         raise RuntimeError("EXPLABS_API_KEY is required to answer questions")
-    model = ChatOpenAI(
+    return ChatOpenAI(
         model=os.getenv("EXPLABS_MODEL", "gpt-5.6-luna"),
         base_url=os.getenv("EXPLABS_BASE_URL", "https://api.experientiallabs.ai/v1"),
         api_key=key,
@@ -73,6 +132,8 @@ def make_agent(knowledge: KnowledgeBase) -> AgentRunner:
         use_responses_api=False,
     )
 
+
+def knowledge_tools(knowledge: KnowledgeBase) -> list[BaseTool]:
     @tool
     def search_knowledge(query: str) -> str:
         """Search approved internal documents for relevant passage IDs and excerpts."""
@@ -98,60 +159,22 @@ def make_agent(knowledge: KnowledgeBase) -> AgentRunner:
             seen.add(passage.id)
         return json.dumps(passage.citation())
 
+    return [search_knowledge, read_passage]
+
+
+def make_agent(
+    knowledge: KnowledgeBase,
+    policy: PolicyManager,
+    observers: Sequence[Observer],
+) -> Agent:
     return create_agent(
-        model=model,
-        tools=[search_knowledge, read_passage],
-        pattern="react",
-        recursion=False,
-        recursion_policy=None,
-        composition=None,
-        workers=(),
-        stages=(),
-        checkpointer=None,
-        checkpoint_authorizer=None,
-        interrupt_before=(),
-        interrupt_after=(),
-        event_sink=None,
-        observers=application_observers(
-            "enterprise_knowledge_assistant",
-            default_metrics_port=METRICS_PORT,
-        ),
-        capabilities=None,
-        capability_registry=None,
-        capability_router=None,
-        capability_policy=None,
-        capability_embeddings=None,
-        capability_retriever=None,
-        capability_reranker=None,
-        max_selected_capabilities=20,
-        middleware=(),
-        explainability=None,
-        feedback_options=None,
-        behavior_options=None,
-        context_model=None,
-        context_options=None,
-        mcp_options=None,
-        mcp_client=None,
-        mcp_server_name=None,
-        mcp_server_id=None,
-        mcp_client_server_name=None,
-        mcp_discover_resources=False,
-        mcp_metadata=None,
-        mcp_refresh=None,
-        refresh_source=None,
-        refresh_operation=None,
-        refresh_options=None,
-        xai_options={
-            "application_id": "enterprise-knowledge-assistant",
-            "tenant_id": "demo-enterprise",
-        },
-        xai_enabled=True,
-        structured_output_schema=None,
-        structured_output_options=None,
+        model=chat_model(),
+        tools=knowledge_tools(knowledge),
         system_prompt=SYSTEM_PROMPT,
-        max_reflections=1,
-        strategy=None,
-        compiler=None,
+        pattern="react",
+        limits=ExecutionLimits(max_depth=0),
+        policy=policy,
+        observers=observers,
     )
 
 
@@ -179,9 +202,11 @@ def evidence_prompt(question: str, passages: list[Passage]) -> str:
 
 def create_app(
     knowledge: KnowledgeBase | None = None,
-    agent_factory: Callable[[KnowledgeBase], AgentRunner] = make_agent,
+    agent_factory: AgentFactory = make_agent,
 ) -> FastAPI:
     kb = knowledge or KnowledgeBase()
+    telemetry = Telemetry()
+    policy: PolicyManager | None = None
     conversations: dict[UUID, list[tuple[str, str]]] = {}
     conversation_locks: dict[UUID, asyncio.Lock] = {}
     registry_lock = asyncio.Lock()
@@ -190,10 +215,22 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
-        yield
-        close = getattr(agent, "close_observability", None)
-        if close is not None:
-            close()
+        nonlocal agent, policy, telemetry
+        telemetry = start_telemetry(
+            METRICS_NAMESPACE,
+            default_metrics_port=METRICS_PORT,
+            metadata={"application_id": SERVICE_ID, "tenant_id": TENANT_ID},
+        )
+        policy = tool_policy()
+        try:
+            yield
+        finally:
+            if agent is not None:
+                agent.close()
+            else:
+                telemetry.shutdown()
+            policy.store.close()
+            agent, policy, telemetry = None, None, Telemetry()
 
     app = FastAPI(
         title="Enterprise Knowledge Assistant",
@@ -203,14 +240,15 @@ def create_app(
 
     @app.get("/api/health")
     def health() -> dict[str, object]:
+        configured = bool(os.getenv("EXPLABS_API_KEY"))
         return {
-            "status": "ok" if os.getenv("EXPLABS_API_KEY") else "unconfigured",
+            "status": "ok" if configured else "unconfigured",
             "documents": len(kb.documents()),
-            "model_configured": bool(os.getenv("EXPLABS_API_KEY")),
+            "model_configured": configured,
             "agloom_features": [
                 "react",
                 "local_tools",
-                "capability_routing",
+                "policy_governed_tools",
                 "grounded_citations",
                 "conversation_context",
             ],
@@ -222,6 +260,7 @@ def create_app(
         return {
             "evidence_policy": "exact_passage_citations",
             "capability_scope": ["search_knowledge", "read_passage"],
+            "tool_policy": policy_summary(),
             "untrusted_content_is_data": True,
             "conversation_turn_limit": MAX_TURNS,
             "observability": observability_status(METRICS_PORT),
@@ -271,15 +310,19 @@ def create_app(
                 citations: list[dict[str, str]] = []
             else:
                 async with agent_lock:
+                    if policy is None:
+                        raise HTTPException(
+                            status_code=503, detail="The service is not started"
+                        )
                     if agent is None:
                         try:
-                            agent = agent_factory(kb)
+                            agent = agent_factory(kb, policy, telemetry.observers)
                         except RuntimeError as exc:
                             raise HTTPException(
                                 status_code=503, detail=str(exc)
                             ) from exc
                 history = conversations.get(conversation_id, [])[-2 * MAX_TURNS :]
-                messages: list[HumanMessage | AIMessage] = [
+                messages: list[BaseMessage] = [
                     (
                         HumanMessage(content=text)
                         if role == "user"
@@ -293,16 +336,13 @@ def create_app(
                 seen = {passage.id for passage in passages}
                 context_token = seen_passages.set(seen)
                 try:
-                    try:
-                        answer = response_text(
-                            await asyncio.to_thread(agent.invoke, messages)
-                        )
-                    except Exception as exc:
-                        log.exception("Knowledge assistant execution failed")
-                        raise HTTPException(
-                            status_code=502,
-                            detail="The assistant could not answer this question",
-                        ) from exc
+                    answer = response_text(await agent.ainvoke(messages))
+                except (AgloomError, ValueError) as exc:
+                    log.exception("Knowledge assistant execution failed")
+                    raise HTTPException(
+                        status_code=502,
+                        detail="The assistant could not answer this question",
+                    ) from exc
                 finally:
                     seen_passages.reset(context_token)
                 cited = list(dict.fromkeys(SOURCE_ID.findall(answer)))

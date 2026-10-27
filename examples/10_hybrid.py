@@ -1,28 +1,43 @@
+"""Hybrid: compose two to four topologies in sequence.
+
+`pattern="hybrid"` with `composition=[...]` runs the child topologies in order
+and passes each result forward. Here ReAct gathers a figure with a tool and
+Reflection reviews and polishes the answer: tool use and quality control in
+one run.
+
+Run:
+    uv run python examples/10_hybrid.py
+"""
+
 from _support import real_model, verified_text
-from langchain_core.tools import tool
 
 from agloom import create_agent
 
-tool_calls: list[tuple[int, int]] = []
+sums: list[tuple[int, int]] = []
 
 
-@tool
 def add(left: int, right: int) -> int:
-    """Add two integers."""
-
-    tool_calls.append((left, right))
+    """Add two integers exactly."""
+    sums.append((left, right))
     return left + right
 
 
-agent = create_agent(
-    model=real_model(),
-    tools=[add],
-    pattern="hybrid",
-    composition=["react", "reflection"],
-)
-result = agent.invoke(
-    "Use the add tool to calculate 2 + 3, then review the result. The final "
-    "answer must preserve the number 5."
-)
-assert tool_calls == [(2, 3)]
-print(verified_text(result, "5"))
+def main() -> None:
+    agent = create_agent(
+        model=real_model(),
+        tools=[add],
+        pattern="hybrid",
+        composition=["react", "reflection"],
+    )
+
+    answer = agent.invoke(
+        "Use the add tool to total 1250 visits from search and 830 visits from "
+        "email, then write one sentence reporting the total visits."
+    )
+
+    assert (1250, 830) in sums, sums
+    print(verified_text(answer, ("2080", "2,080")))
+
+
+if __name__ == "__main__":
+    main()

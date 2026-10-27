@@ -1,27 +1,16 @@
-"""Public observability contracts and integrations."""
+"""Observability contracts, events, and built-in observers."""
 
-from agloom.observability.application import (
-    application_observers,
-    observability_enabled,
-    observability_status,
-)
-from agloom.observability.base import (
-    CallableObserver,
-    CompositeObserver,
-    Observer,
-)
+from agloom.observability.base import Observer
+from agloom.observability.events import AgentEvent, EventName
 from agloom.observability.langfuse import LangfuseObserver
 from agloom.observability.logging import LoggingObserver
 from agloom.observability.prometheus import PrometheusObserver
 
 __all__ = [
-    "CallableObserver",
-    "CompositeObserver",
+    "AgentEvent",
+    "EventName",
     "LangfuseObserver",
     "LoggingObserver",
     "Observer",
     "PrometheusObserver",
-    "application_observers",
-    "observability_enabled",
-    "observability_status",
 ]

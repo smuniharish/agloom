@@ -1,0 +1,32 @@
+global:
+  scrape_interval: 5s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: agloom-enterprise-knowledge
+    static_configs:
+      - targets: ["enterprise-knowledge-api:9464"]
+  - job_name: agloom-customer-chatbot
+    static_configs:
+      - targets: ["customer-chatbot-api:9465"]
+  - job_name: agloom-rca-generator
+    static_configs:
+      - targets: ["rca-generator-api:9466"]
+  - job_name: web-compliance-auditor
+    static_configs:
+      - targets: ["web-compliance-api:9467"]
+  - job_name: engineering-change-investigator
+    static_configs:
+      - targets: ["engineering-change-api:9468"]
+  - job_name: autonomous-product-studio
+    static_configs:
+      - targets:
+          - "autonomous-product-studio-api:9469"
+          - "autonomous-product-studio-worker:9469"
+  - job_name: continuous-evidence-lab
+    static_configs:
+      - targets:
+          - "continuous-evidence-lab-api:9470"
+          - "continuous-evidence-lab-worker:9470"

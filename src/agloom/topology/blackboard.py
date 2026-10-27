@@ -1,111 +1,108 @@
-"""Blackboard topology with worker-owned shared contributions."""
+"""Blackboard: parallel contributions to a shared board, then synthesis."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import END, START
-from langgraph.graph import StateGraph as StateGraphType
+from langchain_core.messages import AnyMessage
+from langgraph.graph import END, START, StateGraph
+from typing_extensions import TypedDict
 
-from agloom.errors import ExecutionError
-from agloom.models import TopologyName, WorkerSpec
+from agloom.errors import ConfigurationError
+from agloom.models import TopologyName
 from agloom.topology._shared import (
-    amodel_text,
-    compile_graph,
-    model_text,
+    State,
+    agent_input,
+    agent_text,
+    answer_update,
+    merge_dicts,
     node,
-    require_workers,
-    safe_name,
+    node_name,
+    request,
     worker_instruction,
 )
-from agloom.topology.base import ExecutionState, TopologyArtifact, TopologyBuildContext
+from agloom.topology.base import TopologyArtifact, TopologyBuildContext, compose_prompt
+
+_CONTRIBUTE = "Contribute your findings to the shared board, staying within your scope."
+_SYNTHESIS = (
+    "Combine the board contributions into one complete answer to the request. "
+    "Resolve conflicting contributions explicitly."
+)
+
+
+class BlackboardState(TypedDict, total=False):
+    """State of the Blackboard topology."""
+
+    task: str
+    messages: list[AnyMessage]
+    context: str | None
+    board: Annotated[dict[str, str], merge_dicts]
+    output: str
+    loop: dict[str, Any]
 
 
 class BlackboardTopology:
+    """Workers contribute to a shared board in parallel; a synthesis combines them.
+
+    Graph nodes: one `contributor_<i>_<name>` node per worker and `synthesize`.
+    Contributors run concurrently, bounded by `ExecutionLimits.max_workers`.
+    """
+
     name = TopologyName.BLACKBOARD
 
     def build(self, context: TopologyBuildContext) -> TopologyArtifact:
-        require_workers(context.workers, self.name)
-        builder = StateGraphType[Any](ExecutionState)
-        previous = START
-        for index, worker in enumerate(context.workers):
-            node_name = f"worker_{index}_{safe_name(worker.name)}"
-
-            def make_contributor(peer: WorkerSpec):
-                instruction = (
-                    f"{worker_instruction(peer)} Read the current shared "
-                    "blackboard snapshot, contribute your findings, and do not "
-                    "overwrite another worker's entry."
-                )
-
-                def run(state: ExecutionState, _: RunnableConfig) -> dict[str, Any]:
-                    board = dict(state.get("blackboard", {}))
-                    if peer.name in board:
-                        raise ExecutionError(
-                            f"blackboard entry {peer.name!r} already has an owner"
-                        )
-                    response = model_text(
-                        context,
-                        instruction,
-                        {
-                            "task": state["task"],
-                            "output": f"Blackboard snapshot: {board}",
-                        },
-                    )
-                    board[peer.name] = response.content
-                    return {"blackboard": board}
-
-                async def arun(
-                    state: ExecutionState, _: RunnableConfig
-                ) -> dict[str, Any]:
-                    board = dict(state.get("blackboard", {}))
-                    if peer.name in board:
-                        raise ExecutionError(
-                            f"blackboard entry {peer.name!r} already has an owner"
-                        )
-                    response = await amodel_text(
-                        context,
-                        instruction,
-                        {
-                            "task": state["task"],
-                            "output": f"Blackboard snapshot: {board}",
-                        },
-                    )
-                    board[peer.name] = response.content
-                    return {"blackboard": board}
-
-                return node(run, arun)
-
-            builder.add_node(node_name, make_contributor(worker))
-            builder.add_edge(previous, node_name)
-            previous = node_name
-
-        def aggregate(state: ExecutionState, _: RunnableConfig) -> dict[str, Any]:
-            response = model_text(
-                context,
-                "Synthesize the shared blackboard contributions into one answer.",
-                {
-                    "task": state["task"],
-                    "output": state.get("blackboard", {}),
-                },
+        """Compile the Blackboard graph."""
+        workers = context.workers
+        if not workers:
+            raise ConfigurationError(
+                "the blackboard topology requires at least one worker"
             )
-            return {"output": response.content}
+        order = [worker.name for worker in workers]
 
-        async def aaggregate(
-            state: ExecutionState, _: RunnableConfig
-        ) -> dict[str, Any]:
-            response = await amodel_text(
-                context,
-                "Synthesize the shared blackboard contributions into one answer.",
-                {
-                    "task": state["task"],
-                    "output": state.get("blackboard", {}),
-                },
+        def board_text(state: State) -> str:
+            board = state.get("board") or {}
+            return "\n\n".join(
+                f"[{name}] {board[name]}" for name in order if name in board
             )
-            return {"output": response.content}
 
-        builder.add_node("aggregate", node(aggregate, aaggregate))
-        builder.add_edge(previous, "aggregate")
-        builder.add_edge("aggregate", END)
-        return TopologyArtifact(self.name, compile_graph(context, builder))
+        builder = StateGraph[Any](BlackboardState)
+        contributors = []
+        for index, worker in enumerate(workers):
+            contributor_id = node_name("contributor", index, worker.name)
+            agent = context.agent(
+                compose_prompt(worker_instruction(worker), _CONTRIBUTE) or "",
+                name=f"agloom_{contributor_id}",
+            )
+            builder.add_node(
+                contributor_id,
+                node(
+                    contributor_id,
+                    lambda state: agent_input(request(state)),
+                    agent,
+                    lambda state, result, author=worker.name: {
+                        "board": {author: agent_text(result)}
+                    },
+                ),
+            )
+            contributors.append(contributor_id)
+        # At most max_workers contributors run at once; each group starts when the
+        # previous group has finished.
+        size = context.limits.max_workers
+        previous: str | list[str] = START
+        for start in range(0, len(contributors), size):
+            group = contributors[start : start + size]
+            for contributor_id in group:
+                builder.add_edge(previous, contributor_id)
+            previous = group
+        builder.add_node(
+            "synthesize",
+            node(
+                "synthesize",
+                lambda state: request(state, ("Shared board", board_text(state))),
+                context.writer(_SYNTHESIS, name="agloom_blackboard_synthesize"),
+                lambda state, message: answer_update(message),
+            ),
+        )
+        builder.add_edge(previous, "synthesize")
+        builder.add_edge("synthesize", END)
+        return TopologyArtifact(self.name, builder.compile(**context.compile_options()))

@@ -1,168 +1,140 @@
-"""Capability providers for local tools, application services, and MCP."""
+"""Capability providers for local tools, application services, and MCP servers."""
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+import hashlib
+import re
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from inspect import isawaitable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import BaseTool
+from langchain_core.tools import tool as as_tool
 
 from agloom.capabilities.registry import CapabilityDescriptor, CapabilityKind
-from agloom.errors import CapabilityResolutionError
+from agloom.errors import CapabilityResolutionError, ConfigurationError
 
-_MCP_RUNTIME_CAPABILITIES = {"mcp_runtime", "mcp_adapter"}
-_INTERNAL_RUNTIME_CAPABILITIES = {*_MCP_RUNTIME_CAPABILITIES, "xai_runtime"}
+if TYPE_CHECKING:
+    from mcp_capability_router import MCPRuntime
 
-
-class CapabilityProvider(ABC):
-    """Loads capability descriptors from one concrete source."""
-
-    @abstractmethod
-    def load(self) -> tuple[CapabilityDescriptor, ...]:
-        """Return the provider's currently available capabilities."""
-
-    async def aload(self) -> tuple[CapabilityDescriptor, ...]:
-        return self.load()
+_TOOL_NAME = re.compile(r"[^A-Za-z0-9_-]+")
+_MAX_TOOL_NAME = 64
 
 
-class LocalLangChainToolProvider(CapabilityProvider):
-    def __init__(self, tools: Sequence[BaseTool | Any]) -> None:
-        self._tools = tuple(tools)
-
-    def load(self) -> tuple[CapabilityDescriptor, ...]:
-        descriptors = []
-        for tool in self._tools:
-            fallback_name = getattr(tool, "__name__", type(tool).__name__)
-            name = str(getattr(tool, "name", fallback_name))
-            description = str(
-                getattr(tool, "description", getattr(tool, "__doc__", "")) or ""
-            )
-            descriptors.append(
-                CapabilityDescriptor(
-                    name=name,
-                    description=description,
-                    kind=CapabilityKind.TOOL,
-                    value=tool,
-                    provider="langchain",
-                )
-            )
-        return tuple(descriptors)
+def to_tool(value: BaseTool | Callable[..., Any]) -> BaseTool:
+    """Return a LangChain tool for a tool object or a plain annotated function."""
+    if isinstance(value, BaseTool):
+        return value
+    if callable(value):
+        return as_tool(value)
+    raise ConfigurationError(
+        f"tools must be LangChain tools or functions, not {value!r}"
+    )
 
 
-class ApplicationCapabilityProvider(CapabilityProvider):
-    def __init__(self, capabilities: Mapping[str, Any]) -> None:
-        self._capabilities = dict(capabilities)
-
-    def load(self) -> tuple[CapabilityDescriptor, ...]:
-        return tuple(
-            CapabilityDescriptor(
-                name=name,
-                description=str(getattr(capability, "description", "") or ""),
-                kind=CapabilityKind.APPLICATION,
-                value=capability,
-                provider="application",
-                metadata={
-                    "type": type(capability).__name__,
-                    "internal": name in _INTERNAL_RUNTIME_CAPABILITIES,
-                },
-            )
-            for name, capability in self._capabilities.items()
-            if name not in _MCP_RUNTIME_CAPABILITIES
+def tool_descriptors(
+    tools: Sequence[BaseTool], *, provider: str = "langchain"
+) -> tuple[CapabilityDescriptor, ...]:
+    """Describe LangChain tools supplied directly or by agent middleware."""
+    return tuple(
+        CapabilityDescriptor(
+            name=tool.name,
+            description=tool.description or "",
+            kind=CapabilityKind.TOOL,
+            value=tool,
+            provider=provider,
         )
+        for tool in tools
+    )
+
+
+def application_descriptors(
+    capabilities: Mapping[str, Any],
+) -> tuple[CapabilityDescriptor, ...]:
+    """Describe application-owned capability objects."""
+    return tuple(
+        CapabilityDescriptor(
+            name=name,
+            description=str(getattr(capability, "description", "") or ""),
+            kind=CapabilityKind.APPLICATION,
+            value=capability,
+            provider="application",
+            metadata={"type": type(capability).__name__},
+        )
+        for name, capability in capabilities.items()
+    )
+
+
+def mcp_tool_name(server_id: str, name: str) -> str:
+    """Return a collision-free, function-calling-safe name for one MCP tool.
+
+    The name is `<server_id>__<tool>` with unsupported characters replaced by
+    `_`. Names longer than 64 characters are shortened with a stable digest.
+    """
+    candidate = _TOOL_NAME.sub("_", f"{server_id}__{name}").strip("_") or "mcp_tool"
+    if len(candidate) <= _MAX_TOOL_NAME:
+        return candidate
+    digest = hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:8]
+    return f"{candidate[: _MAX_TOOL_NAME - 9]}_{digest}"
 
 
 @dataclass(frozen=True)
-class MCPRemoteCapability:
-    runtime: Any
+class MCPCapability:
+    """Executable handle for one capability discovered by an `MCPRuntime`."""
+
+    runtime: MCPRuntime
     capability_id: str
     capability_type: str
+    tool_name: str | None = None
 
-    def invoke(self, arguments: dict[str, Any] | None = None) -> Any:
+    def invoke(self, arguments: Any = None) -> Any:
+        """Reject synchronous execution; MCP capabilities are asynchronous."""
         raise CapabilityResolutionError(
-            f"MCP capability {self.capability_id!r} requires async execution"
+            f"MCP capability {self.capability_id!r} is asynchronous; "
+            "use Agent.aexecute_capability"
         )
 
-    async def ainvoke(self, arguments: dict[str, Any] | None = None) -> Any:
+    async def ainvoke(self, arguments: Any = None) -> Any:
+        """Call the tool, read the resource, or render the prompt."""
         if self.capability_type == "tool":
-            result = self.runtime.execute(self.capability_id, arguments)
-        elif self.capability_type == "resource":
+            return await self.runtime.execute(self.capability_id, arguments or {})
+        if self.capability_type == "resource":
             if arguments is not None:
-                raise CapabilityResolutionError(
-                    "MCP resources do not accept invocation arguments"
-                )
-            result = self.runtime.read_resource(self.capability_id)
-        elif self.capability_type == "prompt":
-            result = self.runtime.get_prompt(self.capability_id, arguments)
-        else:
-            raise CapabilityResolutionError(
-                f"unsupported MCP capability type {self.capability_type!r}"
-            )
-        return await result if isawaitable(result) else result
+                raise CapabilityResolutionError("MCP resources do not accept arguments")
+            return await self.runtime.read_resource(self.capability_id)
+        return await self.runtime.get_prompt(self.capability_id, arguments)
+
+    async def as_tool(self) -> BaseTool:
+        """Return the LangChain tool that calls this MCP tool."""
+        return await self.runtime.as_tool(self.capability_id, name=self.tool_name)
 
 
-class MCPCapabilityProvider(CapabilityProvider):
-    """Discovers MCP tools through the configured package adapter."""
-
-    def __init__(
-        self,
-        capabilities: Mapping[str, Any],
-        *,
-        server_name: str | None = None,
-    ) -> None:
-        self._capabilities = dict(capabilities)
-        self._server_name = server_name
-
-    def load(self) -> tuple[CapabilityDescriptor, ...]:
-        return tuple(
+async def mcp_descriptors(runtime: MCPRuntime) -> tuple[CapabilityDescriptor, ...]:
+    """Describe the capabilities currently registered in an `MCPRuntime`."""
+    descriptors: list[CapabilityDescriptor] = []
+    for capability in await runtime.registry.list():
+        capability_type = str(capability.type)
+        tool_name = (
+            mcp_tool_name(capability.server_id, capability.name)
+            if capability_type == "tool"
+            else None
+        )
+        aliases = tuple(alias for alias in (capability.name, capability.title) if alias)
+        descriptors.append(
             CapabilityDescriptor(
-                name=name,
-                description=str(getattr(capability, "description", "") or ""),
+                name=tool_name or f"mcp:{capability.capability_id}",
+                description=capability.description or capability.title or "",
                 kind=CapabilityKind.MCP,
-                value=capability,
+                value=MCPCapability(
+                    runtime, capability.capability_id, capability_type, tool_name
+                ),
                 provider="mcp-capability-router",
                 metadata={
-                    "type": type(capability).__name__,
-                    "internal": True,
+                    "aliases": aliases,
+                    "mcp_type": capability_type,
+                    "mcp_capability_id": capability.capability_id,
+                    "mcp_server_id": capability.server_id,
                 },
             )
-            for name, capability in self._capabilities.items()
-            if name in _MCP_RUNTIME_CAPABILITIES
         )
-
-    async def adiscover(self) -> tuple[CapabilityDescriptor, ...]:
-        descriptors = []
-        runtime = self._capabilities.get("mcp_runtime")
-        if runtime is None:
-            return ()
-        capabilities = runtime.registry.list(server_id=self._server_name)
-        if isawaitable(capabilities):
-            capabilities = await capabilities
-        for capability in capabilities:
-            capability_id = str(capability.capability_id)
-            capability_type = str(capability.type)
-            metadata = dict(capability.metadata)
-            metadata.update(
-                {
-                    "mcp_capability_id": capability_id,
-                    "mcp_type": capability_type,
-                    "mcp_server_id": str(capability.server_id),
-                }
-            )
-            descriptors.append(
-                CapabilityDescriptor(
-                    name=f"mcp:{capability_id}",
-                    description=str(capability.description or ""),
-                    kind=CapabilityKind.MCP,
-                    value=MCPRemoteCapability(
-                        runtime,
-                        capability_id,
-                        capability_type,
-                    ),
-                    provider="mcp-capability-router",
-                    metadata=metadata,
-                )
-            )
-        return tuple(descriptors)
+    return tuple(descriptors)

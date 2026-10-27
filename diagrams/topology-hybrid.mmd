@@ -1,0 +1,26 @@
+%% Hybrid topology: child topologies run in sequence; composition=["react", "reflection"] shown.
+flowchart LR
+  start@{ shape: sm-circ }
+  subgraph composition ["composition=[&quot;react&quot;, &quot;reflection&quot;] · two to four topologies"]
+    direction LR
+    subgraph child0 ["child_0_react"]
+      direction TB
+      model("model")
+      tools[["tools"]]
+      model <--> tools
+    end
+    subgraph child1 ["child_1_reflection"]
+      direction TB
+      draft("draft")
+      review{{"review"}}
+      revise("revise")
+      draft --> review --> revise --> review
+    end
+    child0 -- "result" --> child1
+  end
+  stop@{ shape: fr-circ }
+
+  start --> composition --> stop
+
+  class model,draft,review,revise model
+  class tools ext

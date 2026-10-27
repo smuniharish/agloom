@@ -1,0 +1,37 @@
+%% Policy enforcement: consequential tools are mediated by agentbarrier; other tools get a stateless check.
+sequenceDiagram
+  participant M as Model
+  participant P as PolicyManager
+  participant B as agentbarrier
+  participant T as Tool
+  participant R as Application
+  M->>P: tool call
+  alt consequential tool
+    P->>B: mediate<br/>(idempotency key)
+    alt allowed
+      B->>T: claim + execute once
+      T-->>B: result
+    else approval required
+      B-->>P: approval pending
+      P-->>R: ExecutionPaused<br/>(ApprovalRequired without a checkpointer)
+      R->>B: reviewer decides<br/>(store.decide, CLI, or API)
+      R->>P: agent.resume(config)
+      P->>B: mediate again
+      B->>T: execute once
+      T-->>B: result
+    else completed earlier
+      Note over B: replay the stored result
+    end
+    B-->>P: result + receipt
+  else any other tool
+    Note over P: stateless policy check<br/>approval rule: PolicyConfigurationError
+    P->>T: allowed: run
+    T-->>P: result
+  end
+  alt executed or replayed
+    P-->>M: ToolMessage
+  else denied, on_denied="inform_model"
+    P-->>M: error ToolMessage
+  else denied, on_denied="raise"
+    P-->>R: raises PolicyViolationError<br/>or the agentbarrier error
+  end

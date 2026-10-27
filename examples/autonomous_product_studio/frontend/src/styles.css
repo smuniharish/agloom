@@ -1,0 +1,50 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;600;700&display=swap");
+:root { color: #edf0e9; background: #101318; font-family: Manrope, sans-serif; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; background: radial-gradient(circle at 90% 0, #24342e 0, transparent 32rem), #101318; }
+main { max-width: 1240px; margin: auto; padding: 3rem 2rem 6rem; }
+.hero { display: flex; align-items: end; justify-content: space-between; gap: 2rem; margin: 3rem 0 4rem; }
+.hero h1 { font-size: clamp(3rem, 8vw, 7rem); letter-spacing: -.07em; line-height: .82; margin: .6rem 0 0; }
+.hero p { max-width: 27rem; color: #aeb8ad; font-size: 1.2rem; }
+.kicker, .section-label { color: #8fe388; font: 500 .72rem DM Mono, monospace; letter-spacing: .17em; }
+.layout { display: grid; grid-template-columns: 260px 1fr; gap: 1rem; }
+.panel { border: 1px solid #303a36; background: rgba(19, 24, 27, .88); border-radius: 3px; padding: 1.5rem; }
+.projects { display: flex; flex-direction: column; gap: .65rem; }
+.project { color: inherit; background: transparent; border: 0; border-left: 2px solid #35403b; padding: .85rem 1rem; text-align: left; cursor: pointer; }
+.project span, .project small { display: block; }.project small { color: #829087; margin-top: .3rem; }
+.project.active { border-color: #8fe388; background: #19251f; }
+.workspace h2, .proof h2 { font-size: 2rem; margin: .8rem 0; }
+.objective { color: #aeb8ad; max-width: 55rem; }
+.criteria { margin: 2rem 0; border-top: 1px solid #303a36; }
+.criteria div { display: grid; grid-template-columns: 4rem 1fr auto; gap: 1rem; align-items: center; border-bottom: 1px solid #303a36; padding: .8rem 0; }
+.criteria b, .criteria em { font: .75rem DM Mono, monospace; color: #8fe388; }.criteria em { color: #7b8c83; }
+label { display: block; font: .75rem DM Mono, monospace; color: #aeb8ad; margin-bottom: .6rem; }
+textarea { width: 100%; min-height: 110px; resize: vertical; color: inherit; background: #0c0f12; border: 1px solid #3c4942; padding: 1rem; font: inherit; }
+button[type=submit] { margin-top: 1rem; padding: .85rem 1.2rem; border: 0; background: #8fe388; color: #0a160d; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: .55; }.error { color: #ff9d91; }
+.proof { display: grid; grid-template-columns: 1fr 2fr; gap: 2rem; margin-top: 1rem; }
+.metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: .5rem; }
+.metric { background: #0d1113; padding: 1rem; }.metric span, .metric strong { display: block; }
+.metric span { color: #7f8b84; font: .68rem DM Mono, monospace; text-transform: uppercase; }.metric strong { font-size: 1.35rem; margin-top: .45rem; }
+.stream { margin-top: 1rem; }
+.stream-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.stream-heading h2 { margin: .65rem 0 1rem; }
+.stream-state { color: #829087; border: 1px solid #35403b; padding: .45rem .65rem; font: .68rem DM Mono, monospace; }
+.stream-state.active { color: #8fe388; border-color: #8fe388; }
+.stream ol { list-style: none; margin: 0; padding: 0; border-top: 1px solid #303a36; }
+.stream li { display: grid; grid-template-columns: 7rem 13rem 1fr auto; gap: 1rem; padding: .8rem 0; border-bottom: 1px solid #303a36; align-items: baseline; }
+.stream time, .stream b, .stream em { font: .72rem DM Mono, monospace; }
+.stream time { color: #7f8b84; }.stream b, .stream em { color: #8fe388; }.stream em { font-style: normal; }
+.review { margin-top: 1rem; border-color: #8fe388; }
+.approval p b { color: #8fe388; font: .8rem DM Mono, monospace; }
+.actions { display: flex; gap: .75rem; margin-top: 1rem; }
+.actions button, button.secondary { padding: .75rem 1.1rem; border: 1px solid #8fe388; background: #8fe388; color: #0a160d; font-weight: 700; cursor: pointer; }
+button.secondary { background: transparent; color: #edf0e9; border-color: #3c4942; margin-top: 1rem; }
+.actions button.secondary { margin-top: 0; }
+@media (max-width: 760px) {
+  main { padding: 1.5rem 1rem 4rem; }.hero { display: block; margin: 2rem 0; }.hero p { margin-top: 2rem; }
+  .layout, .proof { grid-template-columns: 1fr; }.projects { flex-direction: row; overflow-x: auto; }
+  .project { min-width: 170px; }.metrics { grid-template-columns: repeat(2, 1fr); }
+  .criteria div { grid-template-columns: 3.5rem 1fr; }.criteria em { grid-column: 2; }
+  .stream li { grid-template-columns: 1fr auto; }.stream li span { grid-column: 1 / -1; }
+}

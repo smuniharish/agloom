@@ -1,1 +1,0 @@
-"""Web compliance auditor example."""

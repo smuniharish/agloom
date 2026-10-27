@@ -1,0 +1,14 @@
+%% ReAct topology: LangChain's create_agent graph with the nodes model and tools.
+flowchart LR
+  start@{ shape: sm-circ }
+  model("model")
+  tools[["tools"]]
+  stop@{ shape: fr-circ }
+
+  start --> model
+  model -- "tool calls" --> tools
+  tools -- "tool results" --> model
+  model -- "final answer" --> stop
+
+  class model model
+  class tools ext

@@ -1,0 +1,19 @@
+%% Swarm topology: peers hand off to each other with structured turns.
+flowchart TD
+  start@{ shape: sm-circ }
+  subgraph peers ["Peers · any peer hands off to any peer"]
+    direction LR
+    p0("peer_0_&lt;name&gt;")
+    p1("peer_1_&lt;name&gt;")
+    p2("peer_2_&lt;name&gt;")
+    p0 <-- "SwarmTurn" --> p1
+    p1 <-- "SwarmTurn" --> p2
+  end
+  finish("finish<br/><small>skipped when STOP carries the answer<br/>and no middleware= is configured</small>")
+  stop@{ shape: fr-circ }
+
+  start -- "the first worker starts" --> peers
+  peers -- "STOP, or max_handoffs reached" --> finish
+  finish --> stop
+
+  class p0,p1,p2,finish model

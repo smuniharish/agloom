@@ -1,0 +1,23 @@
+[
+  {
+    "id": "VENDOR-SEC-001",
+    "title": "Acme Security Controls",
+    "uri": "workspace://vendor-security",
+    "revision": "2026-09-01",
+    "body": "Acme encrypts customer data in transit with TLS 1.3 and at rest with AES-256. Access to production requires phishing-resistant multi-factor authentication."
+  },
+  {
+    "id": "VENDOR-IR-002",
+    "title": "Acme Incident Response Addendum",
+    "uri": "workspace://incident-response",
+    "revision": "2026-09-12",
+    "body": "Acme will notify affected customers within 72 hours after confirming a security incident. Incident exercises are conducted twice each year."
+  },
+  {
+    "id": "VENDOR-COMP-003",
+    "title": "Acme Compliance Statement",
+    "uri": "workspace://compliance",
+    "revision": "2026-09-20",
+    "body": "The current SOC 2 Type II examination period ended June 30, 2026. The report is available to customers under NDA."
+  }
+]

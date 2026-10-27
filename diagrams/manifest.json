@@ -1,0 +1,29 @@
+{
+  "mermaid_cli": "12.0.0",
+  "scale": 2,
+  "configs": {
+    "mermaid-dark.json": "423fb1c52fd7ab060c7629161726219d6f21aaa5144c73dafb3d64b91df62b8d",
+    "mermaid-light.json": "e77f7be6ba50f6169e1a32f41131ebb087bc8fc9ed1f3798d9a1e14690c8ea33"
+  },
+  "diagrams": {
+    "architecture": "7e082671cfaf9103b0f05e1c9397e9b9822b0af0d0b6fd374fbc04d3cae8a905",
+    "capability-routing": "fb1c8e0bb3483d08d9ac21ade2dce6d3f970285ec6de2c953b44e29628f6d722",
+    "deep-agents-composition": "2bba03b87440ceae30c6897e95d3ee26669451d902d76aa48b901a70ba066276",
+    "execution-selection": "6d42744c7559b3ff31322fb4ab9b354436abb8cb83c9b35608d72cb3ab827381",
+    "inner-outer-loop": "8d055bc2a439a6c8c579b26212d59bdbf05cf9815dd289d30d01ec2fb8b9686c",
+    "loop-state-machine": "ee19ee519e8d1c8a9cbb95b888f4713f8d73ee34d7efb556b408f9f267df3729",
+    "middleware-pipeline": "29d7500833a74116fd596c001bf7bab49b76cf6c0f04a93ce51654b5a3bec07c",
+    "observability-flow": "387a878a6a30822e7a970e527f0575da39285731ddeff3c18ad3f793f3526a4f",
+    "policy-enforcement": "cc340c35118d4731d7a145b9b697423de64f1bc87710c93a9936772556592aaa",
+    "recursion-bounds": "a006bdfa7fb2713cc27f508119a5cfdcbf0a9f7a06332e27774b04acd374fc72",
+    "request-lifecycle": "5cb371a51b8b1ad4460036a422cd9e24adf610889f56ca5e4e98914e60322a96",
+    "topology-blackboard": "156fc81cc44adbd2c77ada4e9de5043fdd526f80a093dbb7951dda7039fffc63",
+    "topology-hybrid": "c526a59675b290d7f07f51dbc6f002f97d0a8e1fe068617a022a0e916a10bc1b",
+    "topology-pipeline": "8edb3a8271ed3caca32bc100871fb5ae3b1650599a794eab0f9d3244a31b8d6b",
+    "topology-planner": "c743ea7cc0a0e3eeaab3fb3ada6a4db937476a671d6a99c98b015cc95636bed9",
+    "topology-react": "14e2a50ea6be866f7cb8504b14a9e155ecec98c426b0fdc556d47e0581f0db9f",
+    "topology-reflection": "de6800dbe0ae12baf2a8d302a6def87cf17e2df0dc44e478d0dccd38ee67a4f0",
+    "topology-supervisor": "87234de6fce6fe28b2ca10975a0661b8fa702597a0cd1324a2e0a8c068774387",
+    "topology-swarm": "964f2419547aab72fcdcfdf3a90da65ca54b239e31f492cd1535b4a472dc6db1"
+  }
+}

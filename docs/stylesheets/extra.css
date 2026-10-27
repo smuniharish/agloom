@@ -1,20 +1,34 @@
-.md-typeset img[src*="/diagrams/"],
-.md-typeset .agloom-diagram img {
+/* Diagrams ship as light and dark PNG variants selected with #only-light and #only-dark.
+   They are rendered at twice their design size, so zoom shows them at that size while
+   staying sharp on high-density screens; max-width still fits them to narrow columns. */
+.md-typeset img[src*="/diagrams/"] {
   display: block;
-  width: min(100%, 72rem);
+  zoom: 0.5;
+  max-width: 100%;
   height: auto;
-  margin: 1.5rem auto;
-  padding: 1rem;
-  border: 1px solid var(--md-default-fg-color--lightest);
-  border-radius: 0.4rem;
-  background: #ffffff;
+  margin: 3rem auto;
+  border-radius: 0.8rem;
 }
 
-.md-typeset .agloom-diagram {
-  display: block;
+/* Keep Material's scheme switching in force over the block display above. */
+[data-md-color-scheme="default"] .md-typeset img[src$="#only-dark"],
+[data-md-color-scheme="slate"] .md-typeset img[src$="#only-light"] {
+  display: none;
 }
 
-.md-typeset table:not([class]) {
-  display: table;
-  width: 100%;
+/* Keep wide comparison and reference tables readable. */
+.md-typeset table:not([class]) th {
+  white-space: nowrap;
+}
+
+/* Keep identifiers in table cells whole; wide tables scroll within their wrapper. */
+.md-typeset table:not([class]) td code {
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.md-typeset .agloom-tagline {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: var(--md-default-fg-color--light);
 }

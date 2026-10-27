@@ -1,0 +1,84 @@
+{
+  "version": "continuous-evidence-lab-2026-10",
+  "default": "deny",
+  "rules": [
+    {
+      "name": "reviewer approves every evidence publication",
+      "effect": "require_approval",
+      "tool": "publish_evidence",
+      "approval_ttl_seconds": 604800
+    },
+    {
+      "name": "validation feedback is read-only",
+      "effect": "allow",
+      "tool": "get_validation_feedback"
+    },
+    {
+      "name": "refresh re-indexes changed evidence revisions",
+      "effect": "allow",
+      "tool": "refresh_evidence_source"
+    },
+    {
+      "name": "workspace files are readable",
+      "effect": "allow",
+      "tool": "evidence-filesystem__read_*"
+    },
+    {
+      "name": "workspace listings are readable",
+      "effect": "allow",
+      "tool": "evidence-filesystem__list_*"
+    },
+    {
+      "name": "workspace tree is readable",
+      "effect": "allow",
+      "tool": "evidence-filesystem__directory_tree"
+    },
+    {
+      "name": "workspace search is allowed",
+      "effect": "allow",
+      "tool": "evidence-filesystem__search_files"
+    },
+    {
+      "name": "workspace metadata is readable",
+      "effect": "allow",
+      "tool": "evidence-filesystem__get_file_info"
+    },
+    {
+      "name": "workspace changes are denied",
+      "effect": "deny",
+      "tool": "evidence-filesystem__*"
+    },
+    {
+      "name": "browser opens HTTPS pages",
+      "effect": "allow",
+      "tool": "evidence-browser__browser_navigate",
+      "conditions": [{"path": "url", "operator": "starts_with", "value": "https://"}]
+    },
+    {
+      "name": "browser opens HTTP pages",
+      "effect": "allow",
+      "tool": "evidence-browser__browser_navigate",
+      "conditions": [{"path": "url", "operator": "starts_with", "value": "http://"}]
+    },
+    {
+      "name": "browser reads page snapshots",
+      "effect": "allow",
+      "tool": "evidence-browser__browser_snapshot"
+    },
+    {
+      "name": "browser interactions are denied",
+      "effect": "deny",
+      "tool": "evidence-browser__*"
+    },
+    {
+      "name": "connectivity check echoes",
+      "effect": "allow",
+      "tool": "evidence-everything__echo"
+    },
+    {
+      "name": "diagnostic server tools are denied",
+      "effect": "deny",
+      "tool": "evidence-everything__*"
+    }
+  ]
+}

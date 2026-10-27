@@ -1,82 +1,194 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling>=1.32.4"]
 build-backend = "hatchling.build"
 
 [project]
 name = "agloom"
-version = "1.0.0"
-description = "Production-grade Python agent harness that automatically classifies tasks, optimizes execution, and scales orchestration across eight specialized topologies."
+version = "1.0.1"
+description = "Production-grade agent harness for LangChain and LangGraph: task-aware execution across eight topologies, policy-governed tools, and Loop Engineering."
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "S Muni Harish", email = "samamuniharish@gmail.com" }]
-keywords = ["agents", "langchain", "langgraph", "orchestration", "topology"]
+keywords = [
+  "agents",
+  "agentbarrier",
+  "langchain",
+  "langgraph",
+  "loop-engineering",
+  "mcp",
+  "orchestration",
+  "policy",
+  "topology",
+]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Framework :: AsyncIO",
-  "License :: OSI Approved :: Apache Software License",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Libraries :: Python Modules",
   "Typing :: Typed",
 ]
-
 dependencies = [
-  "langchain>=1.0,<2.0",
-  "langchain-openai>=1.0,<2.0",
-  "langgraph>=1.2.11,<1.3",
-  "langfuse>=3.0,<4.0",
-  "prometheus-client>=0.22,<1.0",
-  "pydantic>=2.12,<3",
-  "structlog>=25.5,<26",
-  "feedback-manager>=0.1,<0.2",
-  "behaviorweave>=0.1,<0.2",
-  "contextsage>=0.1,<0.2",
-  "mcp-capability-router[mcp]>=0.1,<0.2",
-  "refresh-engine>=0.1,<0.2",
-  "langgraph-xai>=0.1,<0.2",
-  "xstructured>=0.1,<0.2",
+  "agentbarrier>=1.1.0,<2",
+  "behaviorweave>=1.0.0,<2",
+  "contextsage>=1.0.0,<2",
+  "feedback-manager>=0.1.1,<0.2",
+  "jsonschema>=4.26.0,<5",
+  "langchain>=1.4.3,<2",
+  "langchain-core>=1.6.6,<2",
+  "langfuse>=4.17.0,<5",
+  "langgraph>=1.2.13,<2",
+  "langgraph-xai[langfuse]>=1.0.0,<2",
+  "mcp-capability-router>=0.2.0,<0.3",
+  "numpy>=2.5.3,<3",
+  "prometheus-client>=0.26.0,<1",
+  "pydantic>=2.13.5,<3",
+  "refresh-engine>=0.2.0,<0.3",
+  "structlog>=26.1.0,<27",
+  "xstructured>=0.1.1,<0.2",
 ]
+
+[project.optional-dependencies]
+postgres = [
+  "agentbarrier[postgres]>=1.1.0,<2",
+  "langgraph-checkpoint-postgres>=3.1.2,<4",
+]
+postgres-binary = [
+  "agentbarrier[postgres-binary]>=1.1.0,<2",
+  "langgraph-checkpoint-postgres>=3.1.2,<4",
+]
+sqlite = ["langgraph-checkpoint-sqlite>=3.1.1,<4"]
 
 [project.urls]
 Homepage = "https://agloom.readthedocs.io/en/latest/"
 Documentation = "https://agloom.readthedocs.io/en/latest/"
 Source = "https://github.com/smuniharish/agloom"
 Issues = "https://github.com/smuniharish/agloom/issues"
+Changelog = "https://github.com/smuniharish/agloom/blob/master/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
-  "black>=25.1",
-  "mkdocs-material>=9.6",
-  "mkdocstrings[python]>=0.28",
-  "pytest>=8.3",
-  "pytest-asyncio>=0.25",
-  "pyrefly>=0.18",
-  "ruff>=0.11",
+  "coverage[toml]>=7.16.2",
+  "hypothesis>=6.168.5",
+  "pyrefly>=1.3.2",
+  "pytest>=9.1.1",
+  "pytest-asyncio>=1.4.0",
+  "pytest-cov>=7.1.0",
+  "pytest-timeout>=2.4.0",
+  "ruff>=0.16.10",
+  "types-jsonschema>=4.26.0.20260518",
 ]
+docs = [
+  "mkdocs-material>=9.7.7",
+  "mkdocstrings[python]>=1.0.6",
+]
+examples = [
+  "agloom[postgres-binary,sqlite]",
+  "deepagents>=0.7.22",
+  "langchain-openai>=1.6.7",
+  "python-dotenv>=1.2.4",
+]
+
+[tool.uv]
+default-groups = ["dev", "docs", "examples"]
+
+[tool.uv.sources]
+agloom = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agloom"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src/agloom",
+  "/tests",
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/README.md",
+  "/SECURITY.md",
+]
+# The examples are not distributed, so neither are their checks.
+exclude = ["/tests/test_examples.py"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+timeout = 120
+markers = [
+  "network: requires network access or real model credentials",
+]
 filterwarnings = [
   "error::DeprecationWarning",
   "error::PendingDeprecationWarning",
+  "ignore::langchain_core._api.beta_decorator.LangChainBetaWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["agloom"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "^\\s*\\.\\.\\.$",
+  "@overload",
 ]
 
 [tool.ruff]
 line-length = 88
 target-version = "py312"
-src = ["src"]
+src = ["src", "tests"]
+extend-exclude = ["site", "dist", "examples/*/frontend"]
+
+[tool.ruff.format]
+# Documentation code blocks include MkDocs snippet directives that are not Python.
+exclude = ["*.md"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = [
+  "A",
+  "ASYNC",
+  "B",
+  "C4",
+  "D",
+  "E",
+  "F",
+  "I",
+  "PERF",
+  "PIE",
+  "PT",
+  "RET",
+  "RUF",
+  "SIM",
+  "UP",
+  "W",
+]
+ignore = ["D105", "D107"]
 
-[tool.black]
-line-length = 88
-target-version = ["py312"]
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+"examples/**" = ["D"]
+"benchmarks/**" = ["D"]
+"scripts/**" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-builtins]
+builtins-ignorelist = ["input"]
 
 [tool.pyrefly]
 project-includes = ["src/**/*.py"]

@@ -1,12 +1,5 @@
-"""Capability catalogs, providers, and routing contracts."""
+"""Capability catalogs, descriptors, and routing."""
 
-from agloom.capabilities.providers import (
-    ApplicationCapabilityProvider,
-    CapabilityProvider,
-    LocalLangChainToolProvider,
-    MCPCapabilityProvider,
-    MCPRemoteCapability,
-)
 from agloom.capabilities.registry import (
     CapabilityDescriptor,
     CapabilityKind,
@@ -15,7 +8,7 @@ from agloom.capabilities.registry import (
 )
 from agloom.capabilities.router import (
     AllowAllCapabilities,
-    CapabilityPolicy,
+    CapabilityFilter,
     CapabilityRouter,
     CapabilitySelection,
     DefaultCapabilityRouter,
@@ -23,17 +16,12 @@ from agloom.capabilities.router import (
 
 __all__ = [
     "AllowAllCapabilities",
-    "ApplicationCapabilityProvider",
     "CapabilityDescriptor",
+    "CapabilityFilter",
     "CapabilityKind",
-    "CapabilityPolicy",
-    "CapabilityProvider",
     "CapabilityRegistry",
     "CapabilityRouter",
     "CapabilitySelection",
     "DefaultCapabilityRouter",
     "InMemoryCapabilityRegistry",
-    "LocalLangChainToolProvider",
-    "MCPCapabilityProvider",
-    "MCPRemoteCapability",
 ]

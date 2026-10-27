@@ -1,0 +1,32 @@
+{
+  "name": "Pulseboard",
+  "objective": "Build a responsive project health dashboard with a React frontend and FastAPI backend that exposes a health endpoint.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "description": "A React application entry point exists.",
+      "kind": "file",
+      "target": "frontend/src/App.tsx"
+    },
+    {
+      "id": "AC-2",
+      "description": "A FastAPI backend exposes a health endpoint.",
+      "kind": "content",
+      "target": "backend/app.py",
+      "expected": "/api/health"
+    },
+    {
+      "id": "AC-3",
+      "description": "The frontend production build succeeds.",
+      "kind": "command",
+      "target": "frontend-build"
+    },
+    {
+      "id": "AC-4",
+      "description": "The preview renders and is inspectable by Playwright.",
+      "kind": "browser",
+      "target": "http://target-preview",
+      "expected": "Product preview ready"
+    }
+  ]
+}

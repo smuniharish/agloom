@@ -1,70 +1,64 @@
-from __future__ import annotations
+"""MCP: tools, resources, and prompts from MCP servers through an app-owned runtime.
+
+The application owns an `mcp_capability_router.MCPRuntime`, registers its MCP
+servers, and passes the runtime to `create_agent(mcp=...)`. Register with
+`refresh=RefreshPolicy(on_register=True)` (or call `await runtime.refresh()`):
+registration alone discovers nothing, and the agent would see no MCP
+capabilities. Here the example server runs as a separate process over stdio,
+from a standard MCP server configuration; `"keep_alive": False` makes the
+server process end when the runtime closes. The model calls MCP tools as
+`<server>__<tool>`, and the application reads resources and renders prompts
+with `aexecute_capability`. Agents with MCP use the asynchronous APIs.
+
+Run:
+    uv run python examples/13_mcp.py
+"""
 
 import asyncio
 import sys
 from pathlib import Path
 
-from _support import real_model
-from langchain_core.tools import tool
-from langchain_mcp_adapters.client import MultiServerMCPClient
+from _support import real_model, verified_text
+from mcp_capability_router import MCPRuntime, RefreshPolicy
 
 from agloom import create_agent
 
-
-@tool
-def local_uppercase(text: str) -> str:
-    """Convert local text to uppercase."""
-
-    return text.upper()
+OPS_SERVER = {
+    "mcpServers": {
+        "ops": {
+            "command": sys.executable,
+            "args": [str(Path(__file__).with_name("_mcp_server.py"))],
+            "keep_alive": False,
+        }
+    }
+}
 
 
 async def main() -> None:
-    server = Path(__file__).with_name("_mcp_server.py")
-    client = MultiServerMCPClient(
-        {
-            "demo": {
-                "command": sys.executable,
-                "args": [str(server)],
-                "transport": "stdio",
-            }
-        }
-    )
-    agent = create_agent(
-        model=real_model(),
-        tools=[local_uppercase],
-        pattern="react",
-        capabilities={"application_status": lambda _: "ready"},
-        mcp_client=client,
-        mcp_server_name="demo",
-        mcp_discover_resources=True,
-    )
+    async with MCPRuntime() as runtime:
+        await runtime.register_mcp(
+            "ops", OPS_SERVER, refresh=RefreshPolicy(on_register=True)
+        )
+        agent = create_agent(model=real_model(), mcp=runtime, pattern="react")
 
-    readiness = await agent.ainvoke(
-        "Reply in one sentence containing: MCP capability catalog is ready."
-    )
-    assert "MCP capability catalog is ready" in str(readiness.content)
-    selection = await agent.aroute_capabilities(
-        "Use local uppercase, application status, MCP addition, and the guide."
-    )
-    tool_result = await agent.aexecute_capability(
-        "mcp:demo:tool:add",
-        {"left": 17, "right": 23},
-    )
-    resource_result = await agent.aexecute_capability(
-        "mcp:demo:resource:agloom://guide"
-    )
-    prompt = await client.get_prompt(
-        "demo",
-        "summarize",
-        arguments={"topic": "capability routing"},
-    )
-    print("Selected:", selection.names)
-    print("MCP tool:", tool_result)
-    print("MCP resource:", resource_result)
-    print("MCP prompt:", prompt)
-    assert "40" in str(tool_result)
-    assert "Agloom routes local" in str(resource_result)
-    assert "capability routing" in str(prompt)
+        selection = await agent.aroute_capabilities("Check the billing service.")
+        assert "ops__service_status" in selection.tool_names, selection.names
+        print("MCP capabilities:", ", ".join(selection.names))
+
+        answer = await agent.ainvoke(
+            "Use the ops tools to report the current health of the billing service."
+        )
+        print(verified_text(answer, "2.4"))
+
+        runbook = await agent.aexecute_capability(
+            "mcp:ops:resource:ops://runbooks/billing"
+        )
+        prompt = await agent.aexecute_capability(
+            "mcp:ops:prompt:incident_summary", {"service": "billing"}
+        )
+        print("Runbook:", verified_text(runbook[0].text, "payment gateway"))
+        print("Prompt:", verified_text(prompt.messages[0].content.text, "billing"))
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

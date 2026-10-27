@@ -1,20 +1,37 @@
 [project]
 name = "agloom-engineering-change-investigator"
 version = "0.1.0"
-requires-python = ">=3.12,<3.13"
+description = "Release-readiness investigations with Agloom, MCP evidence, and policy-governed release decisions."
+requires-python = ">=3.12"
 dependencies = [
-  "agloom",
-  "fastapi>=0.116,<1",
-  "httpx>=0.28,<1",
-  "pgvector>=0.4,<1",
-  "psycopg[binary,pool]>=3.2,<4",
-  "uvicorn[standard]>=0.35,<1",
+  "agentbarrier>=1.1.0,<2",
+  "agloom[postgres-binary]",
+  "behaviorweave>=1.0.0,<2",
+  "contextsage>=1.0.0,<2",
+  "fastapi>=0.142.2,<1",
+  "feedback-manager>=0.1.1,<0.2",
+  "langchain>=1.4.3,<2",
+  "langchain-core>=1.6.6,<2",
+  "langchain-ollama>=1.1.0,<2",
+  "langchain-openai>=1.6.7,<2",
+  "langgraph-xai>=1.0.0,<2",
+  "mcp-capability-router>=0.2.0,<0.3",
+  "pgvector>=0.5.0,<1",
+  "prometheus-client>=0.26.0,<1",
+  "psycopg[pool]>=3.3.6,<4",
+  "pydantic>=2.13.5,<3",
+  "refresh-engine>=0.2.0,<0.3",
+  "uvicorn[standard]>=0.54.0,<1",
+  "xstructured>=0.1.1,<0.2",
 ]
 
 [dependency-groups]
 dev = [
-  "pytest>=8,<10",
-  "pytest-asyncio>=0.25,<2",
+  "fastmcp>=4.0.11,<5",
+  "httpx>=0.28.1,<1",
+  "pytest>=9.1.1,<10",
+  "pytest-asyncio>=1.4.0,<2",
+  "pytest-timeout>=2.4.0,<3",
 ]
 
 [tool.uv]
@@ -22,3 +39,20 @@ package = false
 
 [tool.uv.sources]
 agloom = { path = "../..", editable = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+timeout = 180
+markers = [
+  "postgres: requires PostgreSQL with pgvector (set ENGINEERING_TEST_DATABASE_URL)",
+  "live: runs the real model and MCP servers (set ENGINEERING_LIVE=1)",
+]
+filterwarnings = [
+  "error::DeprecationWarning",
+  "error::PendingDeprecationWarning",
+  "ignore::langchain_core._api.beta_decorator.LangChainBetaWarning",
+]

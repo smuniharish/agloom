@@ -1,0 +1,39 @@
+FROM mcr.microsoft.com/playwright:v1.55.0-noble AS application
+COPY --from=ghcr.io/astral-sh/uv:0.12.15 /uv /uvx /bin/
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_PYTHON=3.14 \
+    UV_PYTHON_PREFERENCE=only-managed \
+    UV_PYTHON_INSTALL_DIR=/opt/python \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/opt/venv/bin:${PATH}" \
+    PYTHONUNBUFFERED=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+WORKDIR /workspace
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+COPY examples/autonomous_product_studio ./examples/autonomous_product_studio
+RUN uv sync --project examples/autonomous_product_studio --frozen --no-dev \
+    && npm install --global @playwright/mcp@0.0.82 \
+    && test -x /ms-playwright/chromium-1187/chrome-linux/chrome \
+    && ln -s /ms-playwright/chromium-1187/chrome-linux/chrome /usr/local/bin/agloom-chromium \
+    && mkdir -p /workspace/examples/autonomous_product_studio/workspace/projects \
+    && chown -R pwuser:pwuser /workspace
+WORKDIR /workspace/examples/autonomous_product_studio
+USER pwuser
+EXPOSE 8000
+CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000"]
+
+FROM application AS validation-executor
+USER root
+RUN mkdir -p /opt/agloom-validator/frontend \
+    && cd /opt/agloom-validator/frontend \
+    && npm install --ignore-scripts --no-audit --no-fund \
+      react@19.1.1 react-dom@19.1.1 vite@7.1.7 typescript@5.9.2 \
+      @vitejs/plugin-react@5.0.4 @types/react@19.1.13 \
+      @types/react-dom@19.1.9 vitest@3.2.4 \
+    && uv pip install --python /opt/venv/bin/python \
+      pytest==8.4.2 pytest-asyncio==1.2.0 \
+    && chown -R pwuser:pwuser /opt/agloom-validator
+USER pwuser
+CMD ["uvicorn", "backend.validation_executor:app", "--host", "0.0.0.0", "--port", "8080"]

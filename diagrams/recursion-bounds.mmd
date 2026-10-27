@@ -1,0 +1,28 @@
+%% Recursion bounds: how child executions nest, and the ExecutionLimits that bound them.
+flowchart TD
+  request(["agent.invoke(...)"])
+  subgraph depth0 ["depth 0 · the request"]
+    plan0{{"Planner plan<br/><small>at most max_plan_steps steps</small>"}}
+    steps0@{ shape: procs, label: "step<br/><small>at most max_workers in parallel</small>" }
+    plan0 --> steps0
+  end
+  subgraph depth1 ["depth 1 · each step runs as a child execution"]
+    select1("Child selection<br/><small>allowed_nested_topologies · DIRECT allowed</small>")
+    plan1{{"Planner plan"}}
+    steps1@{ shape: procs, label: "step" }
+    select1 --> plan1 --> steps1
+  end
+  deeper("depth 2 … max_depth")
+  error("RecursionLimitError")
+  limits["<b>ExecutionLimits</b><br/>max_depth: deepest child; 0 disables recursion<br/>max_children: child executions per tree<br/>max_execution_time: seconds per tree<br/>allowed_nested_topologies: what children select<br/>max_workers: parallel branches per fan-out<br/>max_plan_steps: steps per Planner plan<br/>max_handoffs: Supervisor and Swarm delegations"]
+
+  request --> depth0
+  steps0 --> depth1
+  steps1 --> deeper
+  deeper -- "a limit is exceeded" --> error
+  depth1 ~~~ limits
+
+  class request api
+  class plan0,steps0,plan1,steps1 model
+  class error bad
+  class limits list

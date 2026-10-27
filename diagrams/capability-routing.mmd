@@ -1,0 +1,30 @@
+%% Capability routing: catalog, policy visibility, filter, optional ranking, and what the model is offered.
+flowchart TD
+  subgraph catalog ["Capability catalog"]
+    tools[["Tools<br/><small>tools= and middleware</small>"]]
+    appcaps[["Application<br/><small>capabilities=</small>"]]
+    mcp[["MCP<br/><small>tools · resources · prompts</small>"]]
+  end
+  hidden("Hide tools the policy denies for every argument")
+  filter("CapabilityFilter.allows(task, capability)")
+  subgraph ranking ["Ranking · with embeddings, a retriever, or a reranker"]
+    direction LR
+    named("Named in task")
+    semantic("Embeddings<br/><small>InMemoryVectorStore</small>")
+    retrieved("Retriever")
+    rerank("Reranker")
+    limit("max_results")
+    named --> semantic --> retrieved --> rerank --> limit
+  end
+  selection("CapabilitySelection")
+  analysis("Task analysis<br/><small>sees the selected capabilities</small>")
+  offered("Each model call<br/><small>offered the routed tools + resolved MCP tools;<br/>calls to tools not offered are refused</small>")
+
+  catalog --> hidden --> filter
+  filter --> ranking --> selection
+  filter -- "no ranking:<br/>all allowed" --> selection
+  selection --> analysis
+  selection --> offered
+
+  class tools,appcaps,mcp ext
+  class selection ok

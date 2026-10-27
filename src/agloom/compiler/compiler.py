@@ -1,126 +1,84 @@
-"""Compile validated specifications to shared LangGraph artifacts."""
+"""Compile architecture specifications to LangGraph graphs."""
 
 from __future__ import annotations
 
-from langgraph.graph.state import CompiledStateGraph
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import Any
 
-from agloom.errors import AgloomError, CompilationError, TopologyError
-from agloom.models import (
-    AgentConfig,
-    ArchitectureSpec,
-    ExecutionMode,
-    TopologyName,
-)
+from langchain_core.runnables import Runnable
+
+from agloom.errors import AgloomError, CompilationError, ConfigurationError
+from agloom.models import ArchitectureSpec, TopologyName
 from agloom.topology.base import Topology, TopologyArtifact, TopologyBuildContext
 from agloom.topology.builtins import BUILTIN_TOPOLOGIES
 
 
 class ArchitectureCompiler:
-    """Validates topology selection and dispatches through a builder registry."""
+    """Builds topology graphs from validated specifications.
 
-    def __init__(self, topologies: dict[TopologyName, Topology] | None = None) -> None:
-        self._topologies = dict(topologies or BUILTIN_TOPOLOGIES)
-        if set(self._topologies) != set(TopologyName):
-            raise ValueError("compiler registry must contain exactly eight topologies")
+    Args:
+        topologies: Replacement builders keyed by topology name. Builders not
+            replaced use the built-in implementation.
+
+    Raises:
+        ConfigurationError: If a replacement builder reports a different name.
+    """
+
+    def __init__(
+        self, topologies: Mapping[TopologyName, Topology] | None = None
+    ) -> None:
+        resolved: dict[TopologyName, Topology] = dict(BUILTIN_TOPOLOGIES)
+        for name, builder in (topologies or {}).items():
+            if builder.name is not name:
+                raise ConfigurationError(
+                    f"the builder registered for {name.value!r} "
+                    f"reports {builder.name.value!r}"
+                )
+            resolved[name] = builder
+        self._topologies = MappingProxyType(resolved)
 
     @property
-    def topologies(self) -> tuple[TopologyName, ...]:
-        return tuple(self._topologies)
-
-    def register(self, topology: Topology) -> None:
-        if topology.name is TopologyName.HYBRID and topology.name in self._topologies:
-            self._topologies[topology.name] = topology
-            return
-        if topology.name in self._topologies:
-            raise TopologyError(
-                f"topology {topology.name.value!r} is already registered"
-            )
-        self._topologies[topology.name] = topology
+    def topologies(self) -> Mapping[TopologyName, Topology]:
+        """The builder used for each topology."""
+        return self._topologies
 
     def compile(
-        self,
-        spec: ArchitectureSpec,
-        config: AgentConfig,
-    ) -> TopologyArtifact | None:
-        if spec.decision.mode is ExecutionMode.DIRECT:
-            if spec.decision.topology is not None:
-                raise CompilationError("DIRECT specification cannot name a topology")
-            return None
+        self, spec: ArchitectureSpec, context: TopologyBuildContext
+    ) -> TopologyArtifact:
+        """Compile one specification.
 
-        topology_name = spec.decision.topology
-        if topology_name is None:
-            raise CompilationError("topology specification is missing its topology")
-        topology = self._topologies.get(topology_name)
-        if topology is None:
-            raise CompilationError(
-                f"topology {topology_name.value!r} is not registered"
-            )
-        if config.middleware and topology_name is not TopologyName.REACT:
-            raise CompilationError(
-                "LangChain middleware is supported only by the ReAct topology"
-            )
+        Raises:
+            CompilationError: If the builder fails or returns another topology.
+        """
 
-        def compile_child(child_name: TopologyName) -> CompiledStateGraph:
-            if child_name is TopologyName.HYBRID:
-                raise CompilationError("Hybrid cannot contain another Hybrid")
-            child = self._topologies.get(child_name)
-            if child is None:
-                raise CompilationError(
-                    f"Hybrid child {child_name.value!r} is not registered"
-                )
-            if config.middleware and child_name is not TopologyName.REACT:
-                raise CompilationError(
-                    "LangChain middleware in Hybrid requires a ReAct child"
-                )
-            child_context = TopologyBuildContext(
-                model=config.model,
-                tools=config.tools,
+        def compile_child(child: TopologyName) -> Runnable[Any, Any]:
+            child_spec = ArchitectureSpec(
+                topology=child,
                 workers=spec.workers,
                 stages=spec.stages,
-                max_reflections=config.max_reflections,
-                recursion_enabled=config.recursion,
-                composition=(),
-                capabilities=config.capabilities,
                 system_prompt=spec.system_prompt,
-                middleware=config.middleware,
-                checkpointer=None,
             )
-            return child.build(child_context).graph
+            return self._build(
+                child_spec, context.child().specialize(child_spec, None)
+            ).graph
 
-        context = TopologyBuildContext(
-            model=config.model,
-            tools=config.tools,
-            workers=spec.workers,
-            stages=spec.stages,
-            max_reflections=config.max_reflections,
-            recursion_enabled=config.recursion,
-            composition=spec.composition,
-            capabilities=config.capabilities,
-            system_prompt=spec.system_prompt,
-            middleware=config.middleware,
-            checkpointer=spec.checkpointer,
-            interrupt_before=config.interrupt_before,
-            interrupt_after=config.interrupt_after,
-            compile_child=compile_child,
-        )
+        return self._build(spec, context.specialize(spec, compile_child))
+
+    def _build(
+        self, spec: ArchitectureSpec, context: TopologyBuildContext
+    ) -> TopologyArtifact:
+        builder = self._topologies[spec.topology]
         try:
-            artifact = topology.build(context)
+            artifact = builder.build(context)
         except AgloomError:
             raise
         except Exception as error:
             raise CompilationError(
-                f"failed to compile {topology_name.value} topology"
+                f"failed to compile the {spec.topology.value} topology"
             ) from error
-        if artifact.name is not topology_name:
+        if artifact.name is not spec.topology:
             raise CompilationError(
-                f"{topology_name.value} builder returned {artifact.name.value}"
+                f"the {spec.topology.value} builder returned {artifact.name.value}"
             )
-        if config.explainability is not None:
-            try:
-                instrumented = config.explainability.instrument(artifact.graph)
-            except Exception as error:
-                raise CompilationError(
-                    "explainability instrumentation failed"
-                ) from error
-            artifact = TopologyArtifact(artifact.name, instrumented)
         return artifact

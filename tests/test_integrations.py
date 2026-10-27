@@ -1,460 +1,299 @@
+"""Ecosystem integrations with their real packages (offline, scripted models)."""
+
 from __future__ import annotations
 
-import itertools
+from collections.abc import Callable
 from typing import Any
 
 import pytest
-from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langchain_core.messages import AIMessage
-from pydantic import BaseModel
+from behaviorweave import BehaviorEngine, InterventionType, PolicyRule
+from behaviorweave.integrations.langchain import BehaviorWeaveMiddleware
+from contextsage import IntelligentSummarizationMiddleware
+from deepagents import CompiledSubAgent, FilesystemMiddleware, create_deep_agent
+from feedback_manager import (
+    FeedbackCategory,
+    FeedbackManager,
+    FeedbackQuery,
+    FeedbackSource,
+    FeedbackTarget,
+    FeedbackTargetType,
+)
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.tools import tool
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph_xai import XAIRuntime
+from refresh_engine import DiscoveryResult, RefreshEngine, Resource, ResourceSnapshot
 
 from agloom import (
-    AgentEvent,
-    ConfigurationError,
-    DefaultCapabilityRouter,
+    EventName,
+    ExecutionPaused,
+    LoopPolicy,
+    LoopTerminationReason,
+    behavior_signals,
     create_agent,
 )
-from agloom.capabilities.integrations import (
-    BehaviorWeaveAdapter,
-    behavior_engine,
-    context_middleware,
-    feedback_manager,
-    mcp_runtime,
-    refresh_engine,
-    with_structured_output,
-    xai_runtime,
+from helpers import (
+    Call,
+    EventLog,
+    ScriptedChatModel,
+    allow_threads,
+    analysis,
+    tool_call,
 )
 
-DIRECT_ANALYSIS = '{"complexity":0,"estimated_steps":1}'
+checked: list[str] = []
 
 
-def test_required_package_constructors_use_installed_public_apis() -> None:
-    from behaviorweave import BehaviorEngine
-    from contextsage import IntelligentSummarizationMiddleware
-    from feedback_manager import FeedbackManager
-    from langgraph_xai import XAIRuntime
-    from mcp_capability_router import MCPRuntime
-    from refresh_engine import RefreshEngine
-
-    assert isinstance(feedback_manager(), FeedbackManager)
-    assert isinstance(behavior_engine(), BehaviorEngine)
-    assert isinstance(
-        context_middleware(FakeListChatModel(responses=["unused"])),
-        IntelligentSummarizationMiddleware,
-    )
-    assert isinstance(mcp_runtime(), MCPRuntime)
-    assert isinstance(
-        refresh_engine(object(), lambda *args: None),
-        RefreshEngine,
-    )
-    assert isinstance(xai_runtime(application_id="agloom-tests"), XAIRuntime)
-
-
-def test_behaviorweave_adapter_translates_normalized_completion_event() -> None:
-    from behaviorweave import BehaviorEngine
-
-    engine = BehaviorEngine()
-    adapter = BehaviorWeaveAdapter(engine, scope="agloom-test-agent")
-
-    decision = adapter(
-        AgentEvent(
-            name="ExecutionCompleted",
-            agent_id="agent-test",
-            run_id="run-test",
-        )
-    )
-
-    assert decision.intervention.kind.value == "noop"
-
-
-def test_contextsage_middleware_is_wired_into_langchain_react() -> None:
-    model = FakeListChatModel(responses=["A focused answer."])
-    middleware = context_middleware(
-        model,
-        trigger=("tokens", 100_000),
-        keep=("messages", 5),
-    )
-    agent = create_agent(
-        model=model,
-        tools=[],
-        pattern="react",
-        middleware=[middleware],
-    )
-
-    result = agent.invoke("Answer briefly.")
-
-    assert isinstance(result, AIMessage)
-    assert result.content == "A focused answer."
-
-
-def test_xai_runtime_instruments_topology_compilation() -> None:
-    agent = create_agent(
-        model=FakeListChatModel(responses=["First", "Second", "Final"]),
-        tools=[],
-        pattern="pipeline",
-        explainability=xai_runtime(application_id="agloom-tests"),
-    )
-
-    result = agent.invoke("Run the stages.")
-
-    assert result.content == "Final"
-
-
-def test_xai_runtime_is_automatic_and_can_be_disabled() -> None:
-    from langgraph_xai import XAIRuntime
-
-    automatic = create_agent(
-        model=FakeListChatModel(responses=["answer"]),
-        tools=[],
-        pattern="react",
-    )
-    disabled = create_agent(
-        model=FakeListChatModel(responses=["answer"]),
-        tools=[],
-        pattern="react",
-        xai_enabled=False,
-    )
-
-    assert isinstance(automatic.capabilities.resolve("xai_runtime"), XAIRuntime)
-    assert automatic.xai is automatic.capabilities.resolve("xai_runtime")
-    assert disabled.config.explainability is None
-    assert disabled.xai is None
-    assert "xai_runtime" not in disabled.capabilities.names
-
-
-class Summary(BaseModel):
-    title: str
-    complete: bool
-
-
-def test_xstructured_wraps_an_agloom_runnable() -> None:
-    agent = create_agent(
-        model=FakeListChatModel(
-            responses=[
-                DIRECT_ANALYSIS,
-                '<xstructured>{"title":"Report","complete":true}</xstructured>',
-            ]
-        ),
-        tools=[],
-    )
-    structured = with_structured_output(agent, Summary)
-
-    result = structured.invoke("Return a short report.")
-
-    assert result.structured == Summary(title="Report", complete=True)
-
-
-@pytest.mark.asyncio
-async def test_feedback_manager_submission_uses_real_domain_contract() -> None:
-    from feedback_manager import (
-        FeedbackCategory,
-        FeedbackSource,
-        FeedbackTarget,
-        FeedbackTargetType,
-    )
-
-    manager = feedback_manager()
-    result = await manager.submit(
-        source=FeedbackSource.HUMAN,
-        category=FeedbackCategory.CORRECTION,
-        target=FeedbackTarget(
-            type=FeedbackTargetType.GENERATION,
-            id="generation-1",
-        ),
-        payload={"corrected_text": "Use the verified result."},
-    )
-
-    assert result.target.id == "generation-1"
-
-
-def test_create_agent_accepts_upstream_constructor_overrides() -> None:
-    from behaviorweave import BehaviorEngine
-    from contextsage import IntelligentSummarizationMiddleware
-    from feedback_manager import FeedbackManager
-    from langgraph_xai import XAIRuntime
-    from mcp_capability_router import MCPRuntime
-
-    class Sink:
-        def emit(self, event) -> None:
-            pass
-
-    model = FakeListChatModel(responses=["A focused answer."])
-    agent = create_agent(
-        model=model,
-        tools=[],
-        pattern="react",
-        feedback_options={"observability_sink": Sink()},
-        behavior_options={"policies": (), "patterns": ()},
-        context_options={
-            "policy": "maximum_compression",
-            "maximum_context_tokens": 12_000,
-            "safety_margin": 0.2,
-        },
-        mcp_options={"max_concurrency": 3, "operation_timeout": 1.5},
-        xai_options={
-            "application_id": "override-test",
-            "tenant_id": "tenant-test",
-        },
-    )
-
-    assert isinstance(agent.capabilities.resolve("feedback_manager"), FeedbackManager)
-    assert isinstance(agent.capabilities.resolve("behavior_engine"), BehaviorEngine)
-    assert isinstance(
-        agent.capabilities.resolve("context_middleware"),
-        IntelligentSummarizationMiddleware,
-    )
-    assert isinstance(agent.capabilities.resolve("mcp_runtime"), MCPRuntime)
-    assert isinstance(agent.capabilities.resolve("xai_runtime"), XAIRuntime)
-
-
-INTEGRATION_COMBINATIONS = tuple(itertools.product((False, True), repeat=7))
-
-
-@pytest.mark.parametrize(
-    (
-        "feedback_enabled",
-        "behavior_enabled",
-        "context_enabled",
-        "mcp_enabled",
-        "refresh_enabled",
-        "xai_enabled",
-        "structured_enabled",
-    ),
-    INTEGRATION_COMBINATIONS,
-)
-def test_every_supported_integration_combination_constructs(
-    feedback_enabled,
-    behavior_enabled,
-    context_enabled,
-    mcp_enabled,
-    refresh_enabled,
-    xai_enabled,
-    structured_enabled,
+def test_langchain_human_review_of_tool_calls(
+    model: Callable[..., ScriptedChatModel],
 ) -> None:
-    class Client:
-        async def get_tools(self, *, server_name=None):
-            del server_name
-            return []
+    restocked: list[tuple[str, int]] = []
 
-        async def get_resources(self, server_name=None, *, uris=None):
-            del server_name, uris
-            return []
+    @tool
+    def restock(sku: str, units: int) -> str:
+        """Restock a product."""
+        restocked.append((sku, units))
+        return f"restocked {units} of {sku}"
 
-        async def get_prompt(self, server_name, prompt_name, *, arguments=None):
-            del server_name, prompt_name, arguments
-            return None
+    def respond(call: Call) -> Any:
+        if call.last.type == "tool":
+            return f"done: {call.last.text.splitlines()[-1]}"
+        return tool_call("restock", {"sku": "SKU-778", "units": 40})
 
-    options: dict[str, Any] = {
-        "model": FakeListChatModel(responses=["unused"]),
-        "tools": [],
-        "pattern": "react",
-        "feedback_options": {} if feedback_enabled else None,
-        "behavior_options": {} if behavior_enabled else None,
-        "context_options": (
-            {"trigger": ("tokens", 100_000), "keep": ("messages", 5)}
-            if context_enabled
-            else None
-        ),
-        "mcp_options": {} if mcp_enabled else None,
-        "mcp_client": Client() if mcp_enabled else None,
-        "mcp_server_name": "matrix" if mcp_enabled else None,
-        "refresh_source": (object() if refresh_enabled else None),
-        "refresh_operation": ((lambda *args: None) if refresh_enabled else None),
-        "xai_enabled": xai_enabled,
-        "structured_output_schema": Summary if structured_enabled else None,
-        "structured_output_options": (
-            {"inject_instructions": False} if structured_enabled else None
-        ),
-    }
-
-    agent = create_agent(**options)
-
-    expected = {
-        "feedback_manager": feedback_enabled,
-        "behavior_engine": behavior_enabled,
-        "context_middleware": context_enabled,
-        "mcp_runtime": mcp_enabled,
-        "refresh_engine": refresh_enabled,
-        "xai_runtime": xai_enabled,
-        "structured_output": structured_enabled,
-    }
-    for name, enabled in expected.items():
-        assert (name in agent.capabilities.names) is enabled
-    assert (agent.structured_output is not None) is structured_enabled
-    assert (agent.xai is not None) is xai_enabled
-
-
-@pytest.mark.parametrize(
-    "conflicting_options",
-    [
-        {
-            "capability_router": DefaultCapabilityRouter(),
-            "capability_policy": object(),
-        },
-        {
-            "capability_router": DefaultCapabilityRouter(),
-            "capability_embeddings": object(),
-        },
-        {
-            "capability_router": DefaultCapabilityRouter(),
-            "capability_retriever": object(),
-        },
-        {
-            "capability_router": DefaultCapabilityRouter(),
-            "capability_reranker": object(),
-        },
-        {
-            "capability_router": DefaultCapabilityRouter(),
-            "max_selected_capabilities": 2,
-        },
-    ],
-)
-def test_custom_router_rejects_every_component_override(
-    conflicting_options,
-) -> None:
-    with pytest.raises(ConfigurationError, match="cannot be combined"):
-        create_agent(
-            model=FakeListChatModel(responses=["unused"]),
-            **conflicting_options,
-        )
-
-
-@pytest.mark.parametrize(
-    "conflicting_options",
-    [
-        {
-            "xai_enabled": False,
-            "explainability": object(),
-        },
-        {
-            "xai_enabled": False,
-            "xai_options": {"application_id": "invalid"},
-        },
-        {
-            "explainability": object(),
-            "xai_options": {"application_id": "invalid"},
-        },
-    ],
-)
-def test_xai_override_modes_are_mutually_exclusive(
-    conflicting_options,
-) -> None:
-    with pytest.raises(ConfigurationError):
-        create_agent(
-            model=FakeListChatModel(responses=["unused"]),
-            **conflicting_options,
-        )
-
-
-def test_structured_options_require_a_schema() -> None:
-    with pytest.raises(ConfigurationError, match="schema is required"):
-        create_agent(
-            model=FakeListChatModel(responses=["unused"]),
-            structured_output_options={"inject_instructions": False},
-        )
-
-
-@pytest.mark.asyncio
-async def test_create_agent_configures_refresh_mcp_client_and_structured_output() -> (
-    None
-):
-    from mcp_capability_router import MCPRuntime
-    from refresh_engine import RefreshEngine
-
-    class Client:
-        async def get_tools(self, *, server_name: str | None = None) -> list[object]:
-            return []
-
-        async def get_resources(self, server_name=None, *, uris=None) -> list[object]:
-            return []
-
-        async def get_prompt(self, server_name, prompt_name, *, arguments=None):
-            return None
-
-    response = '<xstructured>{"title":"Report","complete":true}</xstructured>'
     agent = create_agent(
-        model=FakeListChatModel(
-            responses=[
-                DIRECT_ANALYSIS,
-                response,
-                DIRECT_ANALYSIS,
-                response,
-            ]
-        ),
-        tools=[],
-        mcp_client=Client(),
-        mcp_server_name="documents",
-        mcp_server_id="document-router",
-        mcp_client_server_name="remote-documents",
-        mcp_discover_resources=True,
-        mcp_metadata={"owner": "tests"},
-        refresh_source=object(),
-        refresh_operation=lambda *args: None,
-        structured_output_schema=Summary,
-        structured_output_options={"inject_instructions": False},
-    )
-
-    assert isinstance(agent.capabilities.resolve("mcp_runtime"), MCPRuntime)
-    assert isinstance(agent.capabilities.resolve("refresh_engine"), RefreshEngine)
-    assert agent.structured_output is agent.capabilities.resolve("structured_output")
-    await agent.ainvoke("Initialize MCP and respond.")
-    assert await agent.capabilities.resolve("mcp_runtime").health("document-router")
-    assert agent.structured_output.invoke("Return a report.").structured == Summary(
-        title="Report",
-        complete=True,
-    )
-
-
-@pytest.mark.asyncio
-async def test_automatic_xai_captures_direct_and_topology_executions() -> None:
-    from langgraph_xai import Execution, ProvenanceStore, StoreFilter
-
-    direct = create_agent(
-        model=FakeListChatModel(responses=[DIRECT_ANALYSIS, "direct answer"]),
-        tools=[],
-    )
-    topology = create_agent(
-        model=FakeListChatModel(responses=["topology answer"]),
-        tools=[],
+        model=model(respond),
+        tools=[restock],
         pattern="react",
+        middleware=[HumanInTheLoopMiddleware(interrupt_on={"restock": True})],
+        checkpointer=InMemorySaver(),
+        checkpoint_authorizer=allow_threads,
     )
+    config = {"configurable": {"thread_id": "review"}}
+    with pytest.raises(ExecutionPaused) as paused:
+        agent.invoke("Restock 40 units of SKU-778.", config)
+    request = paused.value.interrupts[0].value["action_requests"][0]
+    assert (request["name"], request["args"]) == (
+        "restock",
+        {"sku": "SKU-778", "units": 40},
+    )
+    assert restocked == []
+    edited = {"name": "restock", "args": {"sku": "SKU-778", "units": 20}}
+    answer = agent.resume(
+        config, {"decisions": [{"type": "edit", "edited_action": edited}]}
+    )
+    assert answer.text == "done: restocked 20 of SKU-778"
+    assert restocked == [("SKU-778", 20)]
 
-    assert direct.invoke("Answer directly.").content == "direct answer"
-    assert topology.invoke("Use the topology.").content == "topology answer"
 
-    async def executions(agent):
-        runtime = agent.capabilities.resolve("xai_runtime")
-        store = runtime.registry.require(ProvenanceStore)
-        return [
-            item
-            async for item in store.query(
-                StoreFilter(
-                    application_id="agloom",
-                    tenant_id="default",
-                    item_type=Execution,
-                )
+@tool
+def check_inventory(sku: str) -> str:
+    """Check inventory for a SKU."""
+    checked.append(sku)
+    return f"{sku}: 4 units"
+
+
+def test_behaviorweave_stops_repeated_calls_and_the_loop(
+    model: Callable[..., ScriptedChatModel],
+) -> None:
+    checked.clear()
+    engine = BehaviorEngine(
+        policies=[
+            PolicyRule(
+                policy_id="stop-repeats",
+                pattern_id="repeated_tool_call",
+                threshold=2,
+                intervention=InterventionType.STOP,
+                message="Stop repeating the same call.",
             )
         ]
+    )
 
-    direct_executions = await executions(direct)
-    topology_executions = await executions(topology)
+    def respond(call: Call) -> Any:
+        if sum(message.type == "tool" for message in call.messages) >= 2:
+            return "Giving up."
+        return tool_call("check_inventory", {"sku": "A-1"})
 
-    assert len(direct_executions) == 2
-    assert all(item.status.value == "completed" for item in direct_executions)
-    assert len(topology_executions) == 1
-    assert topology_executions[0].status.value == "completed"
+    agent = create_agent(
+        model=model(respond),
+        tools=[check_inventory],
+        pattern="react",
+        middleware=[
+            BehaviorWeaveMiddleware(engine, scope="tests", on_decision=behavior_signals)
+        ],
+    )
+    result = agent.invoke_loop("Check A-1")
+    assert checked == ["A-1"]
+    assert (
+        result.state.termination_reason is LoopTerminationReason.BEHAVIOR_INTERVENTION
+    )
+    assert "stop" in result.state.history[0].observation.behavior_signals
 
 
-def test_create_agent_rejects_incomplete_package_configuration() -> None:
-    model = FakeListChatModel(responses=["unused"])
-    with pytest.raises(ConfigurationError, match="must be provided together"):
-        create_agent(
-            model=model,
-            refresh_source=object(),
+def test_contextsage_summarizes_long_conversations(
+    model: Callable[..., ScriptedChatModel],
+) -> None:
+    def respond(call: Call) -> Any:
+        if "Context Extraction Assistant" in call.last.text:
+            return "Summary: the user asked about orders A-100 and B-200."
+        return f"Answered with {len(call.messages)} messages."
+
+    scripted = model(respond)
+    conversation = []
+    for index in range(6):
+        conversation.append(
+            HumanMessage(content=f"Question {index} about order A-100.")
         )
-    with pytest.raises(ConfigurationError, match="require mcp_client"):
-        create_agent(
-            model=model,
-            mcp_options={"max_concurrency": 4},
-            mcp_server_name="unconfigured",
+        conversation.append(AIMessage(content=f"Answer {index} about order B-200."))
+    conversation.append(HumanMessage(content="Summarize the status."))
+    agent = create_agent(
+        model=scripted,
+        pattern="react",
+        middleware=[
+            IntelligentSummarizationMiddleware(
+                scripted, trigger=("messages", 6), keep=("messages", 2)
+            )
+        ],
+    )
+    answer = agent.invoke(conversation)
+    final_call = scripted.calls[-1]
+    assert answer.text == f"Answered with {len(final_call.messages)} messages."
+    assert len(final_call.messages) < len(conversation)
+
+
+def test_explainability_instruments_runs(
+    model: Callable[..., ScriptedChatModel],
+) -> None:
+    runtime = XAIRuntime(application_id="agloom-tests")
+    try:
+
+        def respond(call: Call) -> Any:
+            return analysis() if call.wants("TaskAnalysis") else "explained"
+
+        agent = create_agent(model=model(respond), explainability=runtime)
+        assert agent.xai is runtime
+        assert agent.invoke("Explain").text == "explained"
+        agent.flush()
+        agent.close()
+    finally:
+        runtime.run_sync(runtime.close())
+
+
+async def test_feedback_and_refresh_drive_the_loop(
+    model: Callable[..., ScriptedChatModel],
+) -> None:
+    manager = FeedbackManager()
+    await manager.submit(
+        source=FeedbackSource.HUMAN,
+        category=FeedbackCategory.CORRECTION,
+        target=FeedbackTarget(type=FeedbackTargetType.THREAD, id="thread-7"),
+        payload={"text": "Cite the source document."},
+    )
+    refreshed: list[str] = []
+
+    class Source:
+        async def discover(self) -> DiscoveryResult:
+            return DiscoveryResult([Resource("doc-1", version="2")])
+
+        async def snapshot(self, resource: Resource, /) -> ResourceSnapshot:
+            return ResourceSnapshot(resource.resource_id, content="fresh", version="2")
+
+    async def operation(
+        resource: Any, snapshot: Any, action: Any, request: Any, /
+    ) -> None:
+        refreshed.append(resource.resource_id)
+
+    engine = RefreshEngine(Source(), operation)
+
+    def respond(call: Call) -> Any:
+        if call.wants("TaskAnalysis"):
+            return analysis()
+        if call.wants("LoopAssessment"):
+            complete = "updated report" in call.prompt
+            return tool_call(
+                "LoopAssessment",
+                {
+                    "objective_complete": complete,
+                    "progress": 1.0 if complete else 0.3,
+                    "quality": 0.9,
+                    "feedback": [] if complete else ["Sources are stale."],
+                    "next_step": "complete" if complete else "refresh",
+                },
+            )
+        return "updated report" if refreshed else "stale report"
+
+    scripted = model(respond)
+    events = EventLog()
+    agent = create_agent(
+        model=scripted,
+        loop_policy=LoopPolicy(max_iterations=3, allow_refresh=True),
+        feedback=manager,
+        refresh=engine,
+        observers=[events],
+    )
+    try:
+        result = await agent.ainvoke_loop(
+            "Write the report", {"configurable": {"thread_id": "thread-7"}}
         )
+    finally:
+        await engine.close()
+    assert result.result.text == "updated report"
+    assert refreshed == ["doc-1"]
+    assert EventName.LOOP_REFRESHED in events.names
+    answers = [
+        c
+        for c in scripted.calls
+        if not (c.wants("TaskAnalysis") or c.wants("LoopAssessment"))
+    ]
+    assert len(answers) == 2
+    assert all("Cite the source document." in a.prompt for a in answers)
+    recorded = await manager.query(FeedbackQuery(source=FeedbackSource.EVALUATOR))
+    assert recorded
+    assert recorded[0].payload["feedback"] == ["Sources are stale."]
+
+
+def test_deep_agents_middleware_inside_agloom(
+    model: Callable[..., ScriptedChatModel],
+) -> None:
+    def respond(call: Call) -> Any:
+        tool_results = [m for m in call.messages if m.type == "tool"]
+        if not tool_results:
+            return tool_call(
+                "write_file", {"file_path": "/notes.md", "content": "Revenue grew 12%."}
+            )
+        if len(tool_results) == 1:
+            return tool_call("read_file", {"file_path": "/notes.md"})
+        return f"Notes: {tool_results[-1].text}"
+
+    scripted = model(respond)
+    agent = create_agent(
+        model=scripted, pattern="react", middleware=[FilesystemMiddleware()]
+    )
+    assert {"write_file", "read_file"} <= set(agent.capabilities.names)
+    answer = agent.invoke("Record and read back the revenue note.")
+    assert "Revenue grew 12%." in answer.text
+
+
+def test_agloom_agent_as_a_deep_agents_subagent(
+    model: Callable[..., ScriptedChatModel],
+) -> None:
+    analyst = create_agent(model=model(None, "Q3 revenue grew 12%."), pattern="react")
+
+    def lead(call: Call) -> Any:
+        if call.last.type == "tool":
+            return f"Lead summary: {call.last.text}"
+        return tool_call(
+            "task",
+            {"description": "Analyze Q3 revenue.", "subagent_type": "analyst"},
+        )
+
+    deep = create_deep_agent(
+        model=model(lead),
+        subagents=[
+            CompiledSubAgent(
+                name="analyst", description="Analyzes revenue data.", runnable=analyst
+            )
+        ],
+    )
+    result = deep.invoke({"messages": [HumanMessage(content="How did Q3 go?")]})
+    assert result["messages"][-1].text == "Lead summary: Q3 revenue grew 12%."

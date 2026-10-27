@@ -1,0 +1,42 @@
+%% Loop Engineering state machine: LoopPhase states, LoopAction transitions, LoopTerminationReason values.
+stateDiagram-v2
+  direction TB
+  state "CREATED" as CREATED
+  state "EXECUTING" as EXECUTING
+  state "EVALUATING" as EVALUATING
+  state "COMPLETED" as COMPLETED
+  state "TERMINATED" as TERMINATED
+  state "FAILED" as FAILED
+  state "WAITING" as WAITING
+
+  [*] --> CREATED: invoke
+  CREATED --> EXECUTING: begin iteration
+  EXECUTING --> EVALUATING: observe · evaluate · decide
+  EVALUATING --> EXECUTING: continue · retry · replan<br/>refresh · change_topology
+  EVALUATING --> COMPLETED: complete
+  EVALUATING --> TERMINATED: stop
+  EVALUATING --> FAILED: fail
+  EVALUATING --> WAITING: wait<br/>human_intervention
+  EXECUTING --> WAITING: approval pending
+  WAITING --> EXECUTING: resume
+  WAITING --> TERMINATED: resumed after<br/>the last iteration
+
+  COMPLETED: objective_satisfied
+  COMPLETED: validated
+  COMPLETED: converged
+  COMPLETED: one_shot_complete
+  TERMINATED: explicit_stop · stagnation
+  TERMINATED: iteration_limit · timeout
+  TERMINATED: tool_call_limit · retry_limit
+  TERMINATED: replan_limit · oscillation
+  TERMINATED: policy_violation
+  TERMINATED: behavior_intervention
+  FAILED: execution_failed · timeout
+  FAILED: retry_limit · iteration_limit
+  WAITING: human_intervention
+  WAITING: final without a checkpointer
+
+  class COMPLETED ok
+  class FAILED bad
+  class WAITING human
+  class TERMINATED ext

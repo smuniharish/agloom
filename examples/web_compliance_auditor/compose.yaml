@@ -1,6 +1,6 @@
 services:
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.35.1
     entrypoint: ["/bin/sh", "-c"]
     command:
       - "ollama serve & pid=$$!; sleep 3; ollama pull all-minilm; wait $$pid"
@@ -12,32 +12,45 @@ services:
     ports: ["11435:11434"]
     volumes: [ollama_data:/root/.ollama]
   db:
-    image: pgvector/pgvector:pg16
-    environment: { POSTGRES_DB: compliance, POSTGRES_USER: compliance, POSTGRES_PASSWORD: compliance }
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_DB: compliance
+      POSTGRES_USER: compliance
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U compliance -d compliance"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     ports: ["55433:5432"]
-    volumes: [postgres_data:/var/lib/postgresql/data]
+    volumes: [postgres_data:/var/lib/postgresql]
   target-site:
-    image: nginx:1.27-alpine
+    image: nginx:1.30-alpine
     volumes:
       - ./target:/usr/share/nginx/html:ro
   backend:
-    build: { context: ../.., dockerfile: examples/web_compliance_auditor/backend.Containerfile }
+    build:
+      context: ../..
+      dockerfile: examples/web_compliance_auditor/backend.Containerfile
+    env_file:
+      - path: .env
+        required: false
     environment:
-      DATABASE_URL: postgresql://compliance:compliance@db:5432/compliance
-      EXPLABS_API_KEY: ${EXPLABS_API_KEY:?Set EXPLABS_API_KEY}
-      EXPLABS_BASE_URL: ${EXPLABS_BASE_URL:-https://api.experientiallabs.ai/v1}
-      EXPLABS_MODEL: ${EXPLABS_MODEL:-gpt-5.6-luna}
+      DATABASE_URL: postgresql://compliance:${POSTGRES_PASSWORD}@db:5432/compliance
       OLLAMA_URL: http://ollama:11434
       OLLAMA_EMBED_MODEL: all-minilm
-      AGLOOM_OBSERVABILITY_ENABLED: "true"
-      AGLOOM_METRICS_HOST: 0.0.0.0
-      AGLOOM_METRICS_PORT: 9467
+      METRICS_ENABLED: "true"
+      METRICS_HOST: 0.0.0.0
+      METRICS_PORT: "9467"
+      EXPLABS_API_KEY: ${EXPLABS_API_KEY:?Set EXPLABS_API_KEY in .env}
+      EXPLABS_BASE_URL: ${EXPLABS_BASE_URL:-https://api.experientiallabs.ai/v1}
+      EXPLABS_MODEL: ${EXPLABS_MODEL:-gpt-5.6-luna}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://langfuse-web:3000}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-http://langfuse-web:3000}
     depends_on:
       db:
-        condition: service_started
+        condition: service_healthy
       ollama:
         condition: service_healthy
       target-site:
@@ -48,7 +61,9 @@ services:
       observability:
         aliases: [web-compliance-api]
   frontend:
-    build: { context: ../.., dockerfile: examples/web_compliance_auditor/frontend.Containerfile }
+    build:
+      context: ../..
+      dockerfile: examples/web_compliance_auditor/frontend.Containerfile
     depends_on: [backend]
     ports: ["5176:80"]
 volumes:

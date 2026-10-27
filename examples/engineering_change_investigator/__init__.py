@@ -1,1 +1,0 @@
-"""Engineering change investigator example."""

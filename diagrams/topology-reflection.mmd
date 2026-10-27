@@ -1,0 +1,18 @@
+%% Reflection topology: draft, structured review, and revision with early exit.
+flowchart TD
+  start@{ shape: sm-circ }
+  draft("draft")
+  review{{"review<br/><small>Review</small>"}}
+  revise("revise")
+  stop@{ shape: fr-circ }
+  note["draft and revise are tool-capable sub-agents;<br/>review returns a structured Review: approved, issues"]
+
+  start --> draft --> review
+  review -- "approved" --> stop
+  review -- "issues" --> revise
+  revise -- "rounds left" --> review
+  revise -- "max_reflections reached" --> stop
+  stop ~~~ note
+
+  class draft,review,revise model
+  class note note

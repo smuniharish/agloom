@@ -1,6 +1,5 @@
-"""Execution strategy contracts and default policy."""
+"""Execution selection strategies."""
 
-from agloom.models import ExecutionDecision, ExecutionMode
 from agloom.strategy.engine import StrategyEngine
 
-__all__ = ["ExecutionDecision", "ExecutionMode", "StrategyEngine"]
+__all__ = ["StrategyEngine"]

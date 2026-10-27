@@ -1,0 +1,31 @@
+{
+  "version": "procurement-2026-10",
+  "default": "deny",
+  "rules": [
+    {
+      "name": "approved vendors only",
+      "effect": "deny",
+      "tool": "create_purchase_order",
+      "conditions": [
+        {"path": "vendor", "operator": "not_in", "value": ["Globex", "Initech"]}
+      ]
+    },
+    {
+      "name": "review orders over 5000",
+      "effect": "require_approval",
+      "tool": "create_purchase_order",
+      "conditions": [{"path": "amount", "operator": "gt", "value": 5000}],
+      "approval_ttl_seconds": 86400
+    },
+    {
+      "name": "allow purchase orders",
+      "effect": "allow",
+      "tool": "create_purchase_order"
+    },
+    {
+      "name": "allow invoice reads",
+      "effect": "allow",
+      "tool": "lookup_*"
+    }
+  ]
+}

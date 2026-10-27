@@ -1,6 +1,6 @@
-"""Public agent factory and runnable handle."""
+"""Agent construction and the agent runnable."""
 
+from agloom.agent.agent import Agent
 from agloom.agent.factory import create_agent
-from agloom.agent.handle import Agent
 
 __all__ = ["Agent", "create_agent"]

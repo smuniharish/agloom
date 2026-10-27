@@ -1,31 +1,43 @@
+"""Swarm: peers hand control to each other without a central coordinator.
+
+Each peer contributes within its scope and makes a structured handoff decision:
+the peer that continues, or STOP with the final answer. The first worker
+starts; `ExecutionLimits.max_handoffs` bounds the conversation.
+
+Run:
+    uv run python examples/08_swarm.py
+"""
+
 from _support import real_model, verified_text
 
-from agloom import WorkerSpec, create_agent
+from agloom import ExecutionLimits, WorkerSpec, create_agent
 
-agent = create_agent(
-    model=real_model(),
-    tools=[],
-    pattern="swarm",
-    workers=[
-        WorkerSpec(
-            name="writer",
-            description="Draft the requested conversion explanation.",
-            instructions=(
-                "Draft one sentence showing that 392°F equals 200°C, then route "
-                "to reviewer with NEXT: reviewer."
+
+def main() -> None:
+    agent = create_agent(
+        model=real_model(),
+        pattern="swarm",
+        workers=[
+            WorkerSpec(
+                name="converter",
+                description="Converts temperatures and shows the formula used.",
+                instructions="After converting, hand off to the reviewer.",
             ),
-        ),
-        WorkerSpec(
-            name="reviewer",
-            description="Verify conversions and finalize the response.",
-            instructions=(
-                "Verify the prior conversion, return a polished sentence that "
-                "includes 392°F and 200°C, then end with NEXT: STOP."
+            WorkerSpec(
+                name="reviewer",
+                description="Checks conversions and writes the final answer.",
+                instructions="Verify the arithmetic, then STOP with the answer.",
             ),
-        ),
-    ],
-)
-result = agent.invoke(
-    "Convert 392 degrees Fahrenheit to Celsius and provide the verified result."
-)
-print(verified_text(result, "392", "200", "NEXT: STOP"))
+        ],
+        limits=ExecutionLimits(max_handoffs=4),
+    )
+
+    answer = agent.invoke(
+        "Convert 392 degrees Fahrenheit to Celsius and give the verified result."
+    )
+
+    print(verified_text(answer, "392", "200"))
+
+
+if __name__ == "__main__":
+    main()

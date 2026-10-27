@@ -1,0 +1,24 @@
+%% Request lifecycle: one invocation through Loop Engineering, including pause and resume.
+sequenceDiagram
+  participant C as Caller
+  participant A as Agent
+  participant L as Loop Engineering
+  participant X as Execution
+  C->>A: invoke(input, config)
+  A->>L: start the loop
+  loop each iteration
+    L->>X: task + loop context
+    Note over X: route capabilities<br/>select DIRECT<br/>or a topology<br/>run it
+    X-->>L: result or error
+    Note over L: observe<br/>evaluate the objective<br/>decide
+    Note over L: continue · retry · replan<br/>change topology · refresh<br/>run the next iteration
+  end
+  alt finished
+    L-->>A: result + LoopState
+    A-->>C: answer, or raises the failure
+  else paused
+    L-->>A: interrupts (checkpointed)
+    A-->>C: raises ExecutionPaused
+    C->>A: resume(config, value)
+    A->>L: continue from the checkpoint
+  end

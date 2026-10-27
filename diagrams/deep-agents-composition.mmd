@@ -1,0 +1,27 @@
+%% Composition with Deep Agents in both directions.
+flowchart LR
+  subgraph inside ["Deep Agents middleware inside Agloom"]
+    direction TB
+    a1(["create_agent(..., middleware=[...])"])
+    a2("Every tool-capable sub-agent")
+    a3("Capability routing")
+    a4("Deep Agents middleware<br/><small>for example FilesystemMiddleware</small>")
+    a5("PolicyManager")
+    a6[["Tools"]]
+    a1 --> a2 --> a3 --> a4 --> a5 --> a6
+  end
+  subgraph outside ["Agloom agent inside a Deep Agent"]
+    direction TB
+    b1(["create_deep_agent(subagents=[...])"])
+    b2("Deep Agent")
+    b3("CompiledSubAgent<br/><small>runnable = Agloom agent</small>")
+    b4("Agloom agent<br/><small>selection · topologies · Loop Engineering</small>")
+    b1 --> b2
+    b2 -- "task tool" --> b3
+    b3 -- "messages in" --> b4
+    b4 -- "messages out" --> b2
+  end
+  inside ~~~ outside
+
+  class a1 api
+  class a4,a6,b1,b2,b3 ext

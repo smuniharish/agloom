@@ -1,6 +1,6 @@
 services:
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.35.1
     entrypoint: ["/bin/sh", "-c"]
     command:
       - "ollama serve & pid=$$!; sleep 3; ollama pull all-minilm; wait $$pid"
@@ -14,10 +14,10 @@ services:
     volumes:
       - engineering-ollama:/root/.ollama
   postgres:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_USER: agloom
-      POSTGRES_PASSWORD: agloom
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: engineering
     ports:
       - "55434:5432"
@@ -27,9 +27,9 @@ services:
       timeout: 3s
       retries: 20
     volumes:
-      - engineering-postgres:/var/lib/postgresql/data
+      - engineering-postgres:/var/lib/postgresql
   target-site:
-    image: nginx:1.27-alpine
+    image: nginx:1.30-alpine
     volumes:
       - ./target:/usr/share/nginx/html:ro
   backend:
@@ -40,19 +40,19 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql://agloom:agloom@postgres:5432/engineering
+      DATABASE_URL: postgresql://agloom:${POSTGRES_PASSWORD}@postgres:5432/engineering
       TARGET_SITE_URL: http://target-site
-      AGLOOM_METRICS_HOST: 0.0.0.0
-      AGLOOM_METRICS_PORT: 9468
-      AGLOOM_OBSERVABILITY_ENABLED: "true"
-      EXPLABS_API_KEY: ${EXPLABS_API_KEY:?Set EXPLABS_API_KEY}
-      EXPLABS_BASE_URL: ${EXPLABS_BASE_URL:-https://api.experientiallabs.ai/v1}
-      EXPLABS_MODEL: ${EXPLABS_MODEL:-gpt-5.6-luna}
       OLLAMA_URL: http://ollama:11434
       OLLAMA_EMBED_MODEL: all-minilm
+      METRICS_ENABLED: "true"
+      METRICS_HOST: 0.0.0.0
+      METRICS_PORT: "9468"
+      EXPLABS_API_KEY: ${EXPLABS_API_KEY:?Set EXPLABS_API_KEY in .env}
+      EXPLABS_BASE_URL: ${EXPLABS_BASE_URL:-https://api.experientiallabs.ai/v1}
+      EXPLABS_MODEL: ${EXPLABS_MODEL:-gpt-5.6-luna}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://langfuse-web:3000}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-http://langfuse-web:3000}
     ports:
       - "8004:8000"
       - "9468:9468"

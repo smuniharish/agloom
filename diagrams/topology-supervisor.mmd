@@ -1,0 +1,15 @@
+%% Supervisor topology: a structured-output router delegating to tool-capable workers.
+flowchart TD
+  start@{ shape: sm-circ }
+  supervisor{{"supervisor<br/><small>SupervisorRoute</small>"}}
+  workers@{ shape: procs, label: "worker_&lt;i&gt;_&lt;name&gt;" }
+  synthesize("synthesize<br/><small>skipped when FINISH carries the answer<br/>and no middleware= is configured</small>")
+  stop@{ shape: fr-circ }
+
+  start --> supervisor
+  supervisor -- "next worker + assignment" --> workers
+  workers -- "result" --> supervisor
+  supervisor -- "FINISH, or max_handoffs reached" --> synthesize
+  synthesize --> stop
+
+  class supervisor,workers,synthesize model

@@ -1,260 +1,230 @@
-"""Capability routing with policy, retrieval, and reranking stages."""
+"""Capability routing: filtering, lexical matching, semantic retrieval, reranking."""
 
 from __future__ import annotations
 
 import re
 import threading
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from math import sqrt
 
 from langchain_core.documents import Document
 from langchain_core.documents.compressor import BaseDocumentCompressor
 from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
+from langchain_core.vectorstores import InMemoryVectorStore
 
-from agloom.capabilities.registry import (
-    CapabilityDescriptor,
-    CapabilityKind,
-    CapabilityRegistry,
-)
-from agloom.errors import CapabilityResolutionError
+from agloom.capabilities.registry import CapabilityDescriptor
+from agloom.errors import CapabilityResolutionError, ConfigurationError
+
+_INDEX_CACHE_SIZE = 8
 
 
-class CapabilityPolicy(ABC):
+class CapabilityFilter(ABC):
+    """Decides which capabilities may be considered for one task.
+
+    Filters run before retrieval and ranking, so a capability they reject is
+    never shown to the analyzer or the model. Filters control visibility;
+    execution is governed separately by a [`PolicyManager`][agloom.PolicyManager].
+    """
+
     @abstractmethod
     def allows(self, task: str, capability: CapabilityDescriptor) -> bool:
-        """Return whether the capability may be considered for this task."""
+        """Return whether the capability may be considered for the task."""
 
 
-class AllowAllCapabilities(CapabilityPolicy):
+class AllowAllCapabilities(CapabilityFilter):
+    """A filter that admits every capability."""
+
     def allows(self, task: str, capability: CapabilityDescriptor) -> bool:
+        """Admit the capability."""
         return True
 
 
 @dataclass(frozen=True)
 class CapabilitySelection:
+    """The capabilities selected for one task, best first."""
+
     task: str
     capabilities: tuple[CapabilityDescriptor, ...]
 
     @property
     def names(self) -> tuple[str, ...]:
+        """The selected capability names."""
         return tuple(capability.name for capability in self.capabilities)
 
     @property
-    def tools(self) -> tuple[object, ...]:
-        return tuple(
-            capability.value
+    def tool_names(self) -> frozenset[str]:
+        """Names of the selected capabilities the model can call."""
+        return frozenset(
+            capability.name
             for capability in self.capabilities
-            if capability.kind is CapabilityKind.TOOL
+            if capability.model_callable
         )
 
 
 class CapabilityRouter(ABC):
+    """Selects the capabilities relevant to one task."""
+
     @abstractmethod
     def route(
-        self,
-        task: str,
-        catalog: CapabilityRegistry,
+        self, task: str, catalog: Sequence[CapabilityDescriptor]
     ) -> CapabilitySelection:
-        """Select capabilities for one task."""
+        """Select capabilities for the task."""
 
     @abstractmethod
     async def aroute(
-        self,
-        task: str,
-        catalog: CapabilityRegistry,
+        self, task: str, catalog: Sequence[CapabilityDescriptor]
     ) -> CapabilitySelection:
-        """Asynchronously select capabilities for one task."""
+        """Asynchronously select capabilities for the task."""
 
 
 class DefaultCapabilityRouter(CapabilityRouter):
+    """Filter, then optionally rank capabilities with LangChain retrieval components.
+
+    1. The filter removes capabilities that may not be considered.
+    2. Without `embeddings`, `retriever`, or `reranker`, every remaining
+       capability is selected.
+    3. Otherwise, capabilities named in the task (by name or `aliases`
+       metadata) come first, followed by semantic matches from an
+       `InMemoryVectorStore` built with `embeddings` and from `retriever`
+       documents whose metadata contains `capability_name`.
+    4. The optional `reranker` reorders the candidates; at most `max_results`
+       are selected.
+
+    Args:
+        capability_filter: Visibility filter; admits everything by default.
+        embeddings: Embeddings used to rank capability descriptions.
+        retriever: Retriever returning documents with `capability_name` metadata.
+        reranker: Document compressor that reorders candidates.
+        max_results: Maximum number of capabilities selected by ranking.
+    """
+
     def __init__(
         self,
         *,
-        policy: CapabilityPolicy | None = None,
+        capability_filter: CapabilityFilter | None = None,
         embeddings: Embeddings | None = None,
         retriever: BaseRetriever | None = None,
         reranker: BaseDocumentCompressor | None = None,
         max_results: int = 20,
     ) -> None:
         if max_results < 1:
-            raise ValueError("max_results must be at least 1")
-        self._policy = policy or AllowAllCapabilities()
+            raise ConfigurationError("max_results must be at least 1")
+        self._filter = capability_filter or AllowAllCapabilities()
         self._embeddings = embeddings
         self._retriever = retriever
         self._reranker = reranker
         self._max_results = max_results
-        self._embedding_lock = threading.Lock()
-        self._embedding_cache: dict[
-            tuple[tuple[str, str], ...],
-            list[list[float]],
-        ] = {}
+        self._lock = threading.Lock()
+        self._indexes: OrderedDict[tuple[tuple[str, str], ...], InMemoryVectorStore] = (
+            OrderedDict()
+        )
+
+    @property
+    def ranks(self) -> bool:
+        """Whether a retrieval or reranking stage is configured."""
+        return any(
+            component is not None
+            for component in (self._embeddings, self._retriever, self._reranker)
+        )
 
     def route(
-        self,
-        task: str,
-        catalog: CapabilityRegistry,
+        self, task: str, catalog: Sequence[CapabilityDescriptor]
     ) -> CapabilitySelection:
+        """Select capabilities for the task."""
         allowed = self._allowed(task, catalog)
-        candidates = self._initial_candidates(task, allowed)
-        if self._embeddings is not None:
-            candidates = _merge(
-                candidates,
-                self._embedding_candidates(task, allowed),
-            )
+        if not self.ranks:
+            return CapabilitySelection(task, tuple(allowed.values()))
+        candidates = _exact_matches(task, allowed)
+        if self._embeddings is not None and allowed:
+            key = _index_key(allowed)
+            store = self._cached_index(key)
+            if store is None:
+                store = InMemoryVectorStore(self._embeddings)
+                store.add_documents(_documents(allowed), ids=list(allowed))
+                store = self._cache_index(key, store)
+            documents = store.similarity_search(task, k=len(allowed))
+            candidates = _merge(candidates, _from_documents(documents, allowed))
         if self._retriever is not None:
-            candidates = _merge(
-                candidates,
-                self._from_documents(
-                    self._retriever.invoke(task),
-                    allowed,
-                ),
+            documents = self._retriever.invoke(task)
+            candidates = _merge(candidates, _from_documents(documents, allowed))
+        if self._reranker is not None and candidates:
+            documents = self._reranker.compress_documents(
+                [_document(capability) for capability in candidates], task
             )
-        candidates = self._rerank(task, candidates)
+            candidates = _from_documents(documents, allowed)
         return CapabilitySelection(task, candidates[: self._max_results])
 
     async def aroute(
-        self,
-        task: str,
-        catalog: CapabilityRegistry,
+        self, task: str, catalog: Sequence[CapabilityDescriptor]
     ) -> CapabilitySelection:
+        """Asynchronously select capabilities for the task."""
         allowed = self._allowed(task, catalog)
-        candidates = self._initial_candidates(task, allowed)
-        if self._embeddings is not None:
-            candidates = _merge(
-                candidates,
-                await self._aembedding_candidates(task, allowed),
-            )
+        if not self.ranks:
+            return CapabilitySelection(task, tuple(allowed.values()))
+        candidates = _exact_matches(task, allowed)
+        if self._embeddings is not None and allowed:
+            key = _index_key(allowed)
+            store = self._cached_index(key)
+            if store is None:
+                store = InMemoryVectorStore(self._embeddings)
+                await store.aadd_documents(_documents(allowed), ids=list(allowed))
+                store = self._cache_index(key, store)
+            documents = await store.asimilarity_search(task, k=len(allowed))
+            candidates = _merge(candidates, _from_documents(documents, allowed))
         if self._retriever is not None:
-            candidates = _merge(
-                candidates,
-                self._from_documents(
-                    await self._retriever.ainvoke(task),
-                    allowed,
-                ),
-            )
+            documents = await self._retriever.ainvoke(task)
+            candidates = _merge(candidates, _from_documents(documents, allowed))
         if self._reranker is not None and candidates:
             documents = await self._reranker.acompress_documents(
-                [_as_document(capability) for capability in candidates],
-                task,
+                [_document(capability) for capability in candidates], task
             )
-            candidates = self._from_documents(documents, allowed)
+            candidates = _from_documents(documents, allowed)
         return CapabilitySelection(task, candidates[: self._max_results])
 
     def _allowed(
-        self,
-        task: str,
-        catalog: CapabilityRegistry,
+        self, task: str, catalog: Sequence[CapabilityDescriptor]
     ) -> dict[str, CapabilityDescriptor]:
         return {
             capability.name: capability
-            for capability in catalog.descriptors()
-            if not capability.metadata.get("internal", False)
-            and self._policy.allows(task, capability)
+            for capability in catalog
+            if self._filter.allows(task, capability)
         }
 
-    def _initial_candidates(
-        self,
-        task: str,
-        allowed: dict[str, CapabilityDescriptor],
-    ) -> tuple[CapabilityDescriptor, ...]:
-        if self._retriever is None and self._embeddings is None:
-            return tuple(allowed.values())
-        normalized = task.casefold()
-        exact = []
-        for capability in allowed.values():
-            raw_aliases = capability.metadata.get("aliases", ())
-            if isinstance(raw_aliases, str):
-                aliases = (raw_aliases,)
-            elif isinstance(raw_aliases, Sequence):
-                aliases = raw_aliases
-            else:
-                aliases = ()
-            names = [capability.name, *aliases]
-            if any(_contains_name(normalized, str(name)) for name in names):
-                exact.append(capability)
-        return tuple(exact)
+    def _cached_index(
+        self, key: tuple[tuple[str, str], ...]
+    ) -> InMemoryVectorStore | None:
+        with self._lock:
+            store = self._indexes.get(key)
+            if store is not None:
+                self._indexes.move_to_end(key)
+            return store
 
-    def _embedding_candidates(
-        self,
-        task: str,
-        allowed: dict[str, CapabilityDescriptor],
-    ) -> tuple[CapabilityDescriptor, ...]:
-        if self._embeddings is None or not allowed:
-            return ()
-        capabilities = tuple(allowed.values())
-        key = _embedding_key(capabilities)
-        with self._embedding_lock:
-            vectors = self._embedding_cache.get(key)
-        if vectors is None:
-            vectors = self._embeddings.embed_documents(
-                [_embedding_text(capability) for capability in capabilities]
-            )
-            with self._embedding_lock:
-                self._embedding_cache[key] = vectors
-        query = self._embeddings.embed_query(task)
-        return _rank_embeddings(capabilities, vectors, query)
-
-    async def _aembedding_candidates(
-        self,
-        task: str,
-        allowed: dict[str, CapabilityDescriptor],
-    ) -> tuple[CapabilityDescriptor, ...]:
-        if self._embeddings is None or not allowed:
-            return ()
-        capabilities = tuple(allowed.values())
-        key = _embedding_key(capabilities)
-        with self._embedding_lock:
-            vectors = self._embedding_cache.get(key)
-        if vectors is None:
-            vectors = await self._embeddings.aembed_documents(
-                [_embedding_text(capability) for capability in capabilities]
-            )
-            with self._embedding_lock:
-                self._embedding_cache[key] = vectors
-        query = await self._embeddings.aembed_query(task)
-        return _rank_embeddings(capabilities, vectors, query)
-
-    def _rerank(
-        self,
-        task: str,
-        candidates: tuple[CapabilityDescriptor, ...],
-    ) -> tuple[CapabilityDescriptor, ...]:
-        if self._reranker is None or not candidates:
-            return candidates
-        documents = self._reranker.compress_documents(
-            [_as_document(capability) for capability in candidates],
-            task,
-        )
-        allowed = {capability.name: capability for capability in candidates}
-        return self._from_documents(documents, allowed)
-
-    @staticmethod
-    def _from_documents(
-        documents: Sequence[Document],
-        allowed: dict[str, CapabilityDescriptor],
-    ) -> tuple[CapabilityDescriptor, ...]:
-        capabilities = []
-        for document in documents:
-            name = document.metadata.get("capability_name")
-            if not isinstance(name, str):
-                raise CapabilityResolutionError(
-                    "capability retriever and reranker documents must include "
-                    "string metadata 'capability_name'"
-                )
-            capability = allowed.get(name)
-            if capability is not None and capability not in capabilities:
-                capabilities.append(capability)
-        return tuple(capabilities)
+    def _cache_index(
+        self, key: tuple[tuple[str, str], ...], store: InMemoryVectorStore
+    ) -> InMemoryVectorStore:
+        with self._lock:
+            cached = self._indexes.setdefault(key, store)
+            self._indexes.move_to_end(key)
+            while len(self._indexes) > _INDEX_CACHE_SIZE:
+                self._indexes.popitem(last=False)
+            return cached
 
 
-def _as_document(capability: CapabilityDescriptor) -> Document:
+def _index_key(allowed: dict[str, CapabilityDescriptor]) -> tuple[tuple[str, str], ...]:
+    return tuple((name, capability.description) for name, capability in allowed.items())
+
+
+def _documents(allowed: dict[str, CapabilityDescriptor]) -> list[Document]:
+    return [_document(capability) for capability in allowed.values()]
+
+
+def _document(capability: CapabilityDescriptor) -> Document:
     return Document(
         page_content=f"{capability.name}\n{capability.description}",
         metadata={
-            **capability.metadata,
             "capability_name": capability.name,
             "kind": capability.kind.value,
             "provider": capability.provider,
@@ -262,66 +232,51 @@ def _as_document(capability: CapabilityDescriptor) -> Document:
     )
 
 
-def _contains_name(task: str, name: str) -> bool:
-    normalized = name.casefold().replace("_", " ").replace(":", " ")
-    words = [re.escape(word) for word in normalized.split() if word]
+def _exact_matches(
+    task: str, allowed: dict[str, CapabilityDescriptor]
+) -> tuple[CapabilityDescriptor, ...]:
+    normalized = task.casefold()
+    matches = []
+    for capability in allowed.values():
+        aliases = capability.metadata.get("aliases", ())
+        names: list[object] = [
+            capability.name,
+            *((aliases,) if isinstance(aliases, str) else aliases),
+        ]
+        if any(_mentions(normalized, str(name)) for name in names):
+            matches.append(capability)
+    return tuple(matches)
+
+
+def _mentions(task: str, name: str) -> bool:
+    words = [
+        re.escape(word) for word in re.split(r"[\s_:\-]+", name.casefold()) if word
+    ]
     return (
         bool(words) and re.search(r"\b" + r"\s+".join(words) + r"\b", task) is not None
     )
 
 
 def _merge(
-    first: tuple[CapabilityDescriptor, ...],
-    second: tuple[CapabilityDescriptor, ...],
+    first: tuple[CapabilityDescriptor, ...], second: tuple[CapabilityDescriptor, ...]
 ) -> tuple[CapabilityDescriptor, ...]:
-    merged = list(first)
-    names = {capability.name for capability in merged}
-    for capability in second:
-        if capability.name not in names:
-            merged.append(capability)
-            names.add(capability.name)
+    merged = dict.fromkeys(first)
+    merged.update(dict.fromkeys(second))
     return tuple(merged)
 
 
-def _embedding_key(
-    capabilities: tuple[CapabilityDescriptor, ...],
-) -> tuple[tuple[str, str], ...]:
-    return tuple(
-        (capability.name, capability.description) for capability in capabilities
-    )
-
-
-def _embedding_text(capability: CapabilityDescriptor) -> str:
-    return f"{capability.name}\n{capability.description}"
-
-
-def _rank_embeddings(
-    capabilities: tuple[CapabilityDescriptor, ...],
-    vectors: Sequence[Sequence[float]],
-    query: Sequence[float],
+def _from_documents(
+    documents: Sequence[Document], allowed: dict[str, CapabilityDescriptor]
 ) -> tuple[CapabilityDescriptor, ...]:
-    if len(vectors) != len(capabilities):
-        raise CapabilityResolutionError(
-            "capability embedder returned an unexpected vector count"
-        )
-    scored = [
-        (_cosine_similarity(vector, query), index, capability)
-        for index, (capability, vector) in enumerate(
-            zip(capabilities, vectors, strict=True)
-        )
-    ]
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    return tuple(capability for _, _, capability in scored)
-
-
-def _cosine_similarity(
-    left: Sequence[float],
-    right: Sequence[float],
-) -> float:
-    if len(left) != len(right):
-        raise CapabilityResolutionError("capability embedding dimensions do not match")
-    left_norm = sqrt(sum(value * value for value in left))
-    right_norm = sqrt(sum(value * value for value in right))
-    if left_norm == 0 or right_norm == 0:
-        return 0.0
-    return sum(a * b for a, b in zip(left, right, strict=True)) / left_norm / right_norm
+    selected: dict[str, CapabilityDescriptor] = {}
+    for document in documents:
+        name = document.metadata.get("capability_name")
+        if not isinstance(name, str):
+            raise CapabilityResolutionError(
+                "capability retriever and reranker documents must include "
+                "string metadata 'capability_name'"
+            )
+        capability = allowed.get(name)
+        if capability is not None:
+            selected.setdefault(name, capability)
+    return tuple(selected.values())

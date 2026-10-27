@@ -1,6 +1,44 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+from collections.abc import Callable, Sequence
+from typing import Any
 
-sys.path.insert(0, str(Path(__file__).parents[3]))
+import pytest
+from backend.knowledge import KnowledgeBase
+from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.outputs import ChatResult
+from pydantic import Field
+
+
+class ScriptedModel(GenericFakeChatModel):
+    """Replays scripted replies, accepts tool binding, and records its inputs."""
+
+    received: list[list[BaseMessage]] = Field(default_factory=list)
+
+    def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> ScriptedModel:
+        return self
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        self.received.append(list(messages))
+        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+
+@pytest.fixture
+def kb() -> KnowledgeBase:
+    return KnowledgeBase()
+
+
+@pytest.fixture
+def scripted_model() -> Callable[..., ScriptedModel]:
+    def build(*replies: AIMessage) -> ScriptedModel:
+        return ScriptedModel(messages=iter(replies))
+
+    return build

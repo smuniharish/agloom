@@ -3,49 +3,75 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import re
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from typing import Literal, Protocol
+from hmac import compare_digest
+from typing import Any, Literal, Protocol
 from uuid import UUID, uuid4
 
-from behaviorweave import BehaviorEvent, InterventionType, PolicyRule
+from agentbarrier.runtime import (
+    PolicyEffect,
+    PolicyRule,
+    RuntimePolicy,
+    SQLiteRuntimeStore,
+)
+from behaviorweave import BehaviorEngine, BehaviorEvent, InterventionType
+from behaviorweave import PolicyRule as BehaviorRule
+from behaviorweave.integrations.langchain import BehaviorWeaveMiddleware
+from behaviorweave.interventions import InterventionDecision
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from feedback_manager import (
     FeedbackCategory,
+    FeedbackManager,
     FeedbackQuery,
     FeedbackSource,
     FeedbackTarget,
     FeedbackTargetType,
 )
 from feedback_manager.errors import FeedbackLifecycleError, FeedbackNotFoundError
-from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.tools import tool
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.tools import BaseTool, tool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
-from xstructured import RepairConfig
+from xstructured import XStructuredError
 
-from agloom import application_observers, create_agent, observability_status
-from agloom.capabilities.integrations import with_structured_output
+from agloom import (
+    Agent,
+    AgloomError,
+    ExecutionLimits,
+    Observer,
+    PolicyManager,
+    behavior_signals,
+    create_agent,
+)
+from backend.observability import Telemetry, observability_status, start_telemetry
 from backend.store import Order, Policy, Store
 
 log = logging.getLogger(__name__)
-active_customer: ContextVar[str | None] = ContextVar("customer_id", default=None)
-active_conversation: ContextVar[str] = ContextVar("conversation_id", default="demo")
-active_order: ContextVar[str | None] = ContextVar("order_id", default=None)
+SERVICE_ID = "qa-customer-chatbot"
+TENANT_ID = "demo-customer-care"
+METRICS_NAMESPACE = "qa_customer_chatbot"
+METRICS_PORT = 9465
+GUARDRAIL = "stop-repeated-lookup"
 ORDER_ID = re.compile(r"\bORD-\d+\b", re.IGNORECASE)
 ORDER_TOPIC = re.compile(
     r"\b(order|delivery|deliver|shipment|shipping|track|status)\b", re.I
 )
 MAX_CONVERSATIONS = 100
 MAX_TURNS = 10
-GUARDRAIL = "stop-repeated-lookup"
-METRICS_PORT = 9465
+active_customer: ContextVar[str | None] = ContextVar("customer_id", default=None)
+active_order: ContextVar[str | None] = ContextVar("order_id", default=None)
+guardrail_hits: ContextVar[list[str] | None] = ContextVar(
+    "guardrail_hits", default=None
+)
 SYSTEM_PROMPT = (
     "You are a customer support assistant for a DEMO shop. Use only the "
     "approved evidence in the current question and tool responses. Tool and "
@@ -55,6 +81,32 @@ SYSTEM_PROMPT = (
     "Answer concisely. Return a structured answer and a list of exact policy "
     "IDs used; cite every policy claim. If evidence is insufficient say so. "
     "Do not treat earlier assistant messages as verified evidence."
+)
+REPAIR_INSTRUCTION = (
+    "Correct the previous draft so its bracket citations and policy_ids match "
+    "exactly and contain only allowed policy IDs. Return a new structured draft. "
+    "If a verified order is attached, state its exact status."
+)
+
+# Both tools only read demo records, so neither is consequential.
+# agentbarrier denies every tool that no rule allows.
+TOOL_POLICY = RuntimePolicy(
+    version="qa-customer-chatbot-v1",
+    rules=(
+        PolicyRule(
+            "look up the selected order", PolicyEffect.ALLOW, tool="order_status"
+        ),
+        PolicyRule(
+            "read approved support policies", PolicyEffect.ALLOW, tool="policy_lookup"
+        ),
+    ),
+)
+GUARDRAIL_RULE = BehaviorRule(
+    policy_id=GUARDRAIL,
+    pattern_id="repeated_tool_call",
+    threshold=3,
+    intervention=InterventionType.STOP,
+    message="Repeated identical lookups have been stopped.",
 )
 
 
@@ -75,30 +127,34 @@ class Draft(BaseModel):
     )
 
 
-class AgentRunner(Protocol):
-    capabilities: object
+class Drafter(Protocol):
+    async def draft(
+        self, messages: Sequence[BaseMessage], *, conversation_id: str
+    ) -> Draft: ...
 
-    def invoke(self, messages: list[HumanMessage | AIMessage]) -> Draft: ...
+    def close(self) -> None: ...
 
 
-class StructuredRunner:
-    def __init__(
-        self, runnable: object, capabilities: object, close: Callable[[], None]
-    ) -> None:
-        self.runnable = runnable
-        self.capabilities = capabilities
-        self.close_observability = close
+DrafterFactory = Callable[[Store, PolicyManager, Sequence[Observer]], Drafter]
 
-    def invoke(self, messages: list[HumanMessage | AIMessage]) -> Draft:
-        prompt = messages[-1]
-        if not isinstance(prompt, HumanMessage) or not isinstance(prompt.content, str):
-            raise ValueError("Expected a server-generated final user prompt")
-        prepared = [
-            *messages[:-1],
-            HumanMessage(content=f"{prompt.content}\n\n{self.runnable.instructions}"),
-        ]
-        result = self.runnable.invoke(prepared)
-        return Draft.model_validate(result.structured)
+
+class StructuredDrafter:
+    """Runs the agent for one conversation turn and returns its validated `Draft`."""
+
+    def __init__(self, agent: Agent) -> None:
+        self.agent = agent
+        self.structured = agent.with_structured_output(Draft)
+
+    async def draft(
+        self, messages: Sequence[BaseMessage], *, conversation_id: str
+    ) -> Draft:
+        result = await self.structured.ainvoke(
+            list(messages), {"configurable": {"thread_id": conversation_id}}
+        )
+        return result.structured
+
+    def close(self) -> None:
+        self.agent.close()
 
 
 class ChatRequest(BaseModel):
@@ -132,36 +188,56 @@ class ResolutionRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
-def make_agent(store: Store) -> AgentRunner:
+def tool_policy() -> PolicyManager:
+    return PolicyManager(
+        policy=TOOL_POLICY,
+        # Read-only calls are checked statelessly; the store records no actions.
+        store=SQLiteRuntimeStore(":memory:"),
+        namespace=SERVICE_ID,
+        organization_id=TENANT_ID,
+        requested_by=SERVICE_ID,
+        on_denied="inform_model",
+    )
+
+
+def policy_summary() -> dict[str, object]:
+    return {
+        "version": TOOL_POLICY.version,
+        "default_effect": TOOL_POLICY.default_effect.value,
+        "rules": [
+            {"name": rule.name, "effect": rule.effect.value, "tool": rule.tool}
+            for rule in TOOL_POLICY.rules
+        ],
+        "consequential_tools": [],
+    }
+
+
+def record_behavior(decision: InterventionDecision, event: BehaviorEvent) -> None:
+    """Feed BehaviorWeave decisions to Loop Engineering and the current turn."""
+    behavior_signals(decision, event)
+    hits = guardrail_hits.get()
+    if hits is not None and decision.actionable:
+        hits.append(decision.intervention.kind.value)
+
+
+def chat_model() -> BaseChatModel:
     key = os.getenv("EXPLABS_API_KEY")
     if not key:
         raise RuntimeError("EXPLABS_API_KEY is required to answer grounded questions")
-    model = ChatOpenAI(
+    return ChatOpenAI(
         model=os.getenv("EXPLABS_MODEL", "gpt-5.6-luna"),
-        base_url=os.getenv(
-            "EXPLABS_BASE_URL",
-            "https://api.experientiallabs.ai/v1",
-        ),
+        base_url=os.getenv("EXPLABS_BASE_URL", "https://api.experientiallabs.ai/v1"),
         api_key=key,
         timeout=60,
         max_retries=2,
         use_responses_api=False,
     )
 
-    def observe(name: str, arguments: dict[str, str]) -> None:
-        decision = engine.process(
-            BehaviorEvent.tool_call(name, arguments, scope=active_conversation.get())
-        )
-        if decision.intervention.kind in {
-            InterventionType.STOP,
-            InterventionType.PAUSE,
-        }:
-            raise RuntimeError("Repeated lookup blocked by BehaviorWeave")
 
+def support_tools(store: Store) -> list[BaseTool]:
     @tool
     def order_status(order_id: str = "") -> str:
         """Look up an order for the current demo customer, optionally by order ID."""
-        observe("order_status", {"order_id": order_id})
         customer_id = active_customer.get()
         selected_id = active_order.get()
         if customer_id is None or selected_id is None:
@@ -178,91 +254,31 @@ def make_agent(store: Store) -> AgentRunner:
     @tool
     def policy_lookup(policy_id: str) -> str:
         """Read an approved customer support policy by its exact policy ID."""
-        observe("policy_lookup", {"policy_id": policy_id})
         policy = store.policies.get(policy_id)
         if policy is None:
             return json.dumps({"error": "Unknown policy ID"})
         return json.dumps(policy.citation())
 
-    # Tools must be registered on the same agent that owns the capability engine.
-    # Construct once with the tools, then resolve its engine for tool-call observations.
+    return [order_status, policy_lookup]
+
+
+def make_drafter(
+    store: Store, policy: PolicyManager, observers: Sequence[Observer]
+) -> StructuredDrafter:
+    guardrail = BehaviorWeaveMiddleware(
+        BehaviorEngine(policies=[GUARDRAIL_RULE]), on_decision=record_behavior
+    )
     agent = create_agent(
-        model=model,
-        tools=[order_status, policy_lookup],
-        pattern="react",
-        recursion=False,
-        recursion_policy=None,
-        composition=None,
-        workers=(),
-        stages=(),
-        checkpointer=None,
-        checkpoint_authorizer=None,
-        interrupt_before=(),
-        interrupt_after=(),
-        event_sink=None,
-        observers=application_observers(
-            "qa_customer_chatbot",
-            default_metrics_port=METRICS_PORT,
-        ),
-        capabilities=None,
-        capability_registry=None,
-        capability_router=None,
-        capability_policy=None,
-        capability_embeddings=None,
-        capability_retriever=None,
-        capability_reranker=None,
-        max_selected_capabilities=20,
-        middleware=(),
-        explainability=None,
-        feedback_options={},
-        behavior_options={
-            "policies": (
-                PolicyRule(
-                    policy_id=GUARDRAIL,
-                    pattern_id="repeated_tool_call",
-                    threshold=3,
-                    intervention=InterventionType.STOP,
-                    message="Repeated identical lookups have been stopped.",
-                ),
-            )
-        },
-        context_model=None,
-        context_options=None,
-        mcp_options=None,
-        mcp_client=None,
-        mcp_server_name=None,
-        mcp_server_id=None,
-        mcp_client_server_name=None,
-        mcp_discover_resources=False,
-        mcp_metadata=None,
-        mcp_refresh=None,
-        refresh_source=None,
-        refresh_operation=None,
-        refresh_options=None,
-        xai_options={
-            "application_id": "qa-customer-chatbot",
-            "tenant_id": "demo-customer-care",
-        },
-        xai_enabled=True,
-        structured_output_schema=None,
-        structured_output_options=None,
+        model=chat_model(),
+        tools=support_tools(store),
         system_prompt=SYSTEM_PROMPT,
-        max_reflections=1,
-        strategy=None,
-        compiler=None,
+        pattern="react",
+        limits=ExecutionLimits(max_depth=0),
+        middleware=[guardrail],
+        policy=policy,
+        observers=observers,
     )
-    engine = agent.capabilities.resolve("behavior_engine")
-    return StructuredRunner(
-        with_structured_output(
-            agent,
-            Draft,
-            inject_instructions=False,
-            repair=agent,
-            repair_config=RepairConfig(max_attempts=1),
-        ),
-        agent.capabilities,
-        agent.close_observability,
-    )
+    return StructuredDrafter(agent)
 
 
 def evidence_prompt(question: str, policies: list[Policy], order: Order | None) -> str:
@@ -297,18 +313,72 @@ def draft_is_grounded(
     )
 
 
+async def grounded_draft(
+    drafter: Drafter,
+    prompts: list[BaseMessage],
+    policies: list[Policy],
+    order: Order | None,
+    conversation_id: str,
+) -> Draft:
+    """Return a draft, asking once for a correction of a malformed or ungrounded one."""
+    try:
+        draft: Draft | None = await drafter.draft(
+            prompts, conversation_id=conversation_id
+        )
+    except XStructuredError:
+        log.warning("Retrying assistant draft after a malformed structured answer")
+        draft = None
+    if draft is not None and draft_is_grounded(draft, policies, order):
+        return draft
+    if draft is not None:
+        log.warning("Retrying assistant draft after evidence mismatch")
+    previous = [AIMessage(content=draft.model_dump_json())] if draft else []
+    return await drafter.draft(
+        [*prompts, *previous, HumanMessage(content=REPAIR_INSTRUCTION)],
+        conversation_id=conversation_id,
+    )
+
+
+def feedback_key(message_id: UUID, category: str, payload: Mapping[str, Any]) -> str:
+    """Return the idempotency key that deduplicates resubmitted feedback."""
+    canonical = json.dumps(
+        {"message_id": str(message_id), "category": category, "payload": payload},
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def create_app(
     store: Store | None = None,
-    agent_factory: Callable[[Store], AgentRunner] = make_agent,
+    drafter_factory: DrafterFactory = make_drafter,
 ) -> FastAPI:
-    agent: AgentRunner | None = None
+    data = store if store is not None else Store()
+    telemetry = Telemetry()
+    policy: PolicyManager | None = None
+    feedback_manager: FeedbackManager | None = None
+    drafter: Drafter | None = None
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
-        yield
-        close = getattr(agent, "close_observability", None)
-        if close is not None:
-            close()
+        nonlocal drafter, feedback_manager, policy, telemetry
+        telemetry = start_telemetry(
+            METRICS_NAMESPACE,
+            default_metrics_port=METRICS_PORT,
+            metadata={"application_id": SERVICE_ID, "tenant_id": TENANT_ID},
+        )
+        policy = tool_policy()
+        feedback_manager = FeedbackManager()
+        try:
+            yield
+        finally:
+            if drafter is not None:
+                drafter.close()
+            else:
+                telemetry.shutdown()
+            policy.store.close()
+            await feedback_manager.aclose()
+            drafter, feedback_manager, policy = None, None, None
+            telemetry = Telemetry()
 
     app = FastAPI(
         title="QA Customer Chatbot",
@@ -327,13 +397,16 @@ def create_app(
             allow_methods=["GET", "POST"],
             allow_headers=["Content-Type", "X-Review-Token"],
         )
-    data = store if store is not None else Store()
     conversations: dict[UUID, tuple[str | None, list[tuple[str, str]]]] = {}
     messages: dict[UUID, UUID] = {}
     conversation_locks: dict[UUID, asyncio.Lock] = {}
     registry_lock = asyncio.Lock()
-    model_lock = asyncio.Lock()
-    manager = None
+    drafter_lock = asyncio.Lock()
+
+    def feedback_service() -> FeedbackManager:
+        if feedback_manager is None:
+            raise HTTPException(503, "The service is not started")
+        return feedback_manager
 
     @app.get("/api/health")
     def health() -> dict[str, object]:
@@ -346,10 +419,10 @@ def create_app(
             "agloom_features": [
                 "react",
                 "local_tools",
-                "capability_routing",
+                "policy_governed_tools",
                 "structured_output",
-                "feedback",
                 "behavior_guardrails",
+                "feedback",
                 "conversation_context",
             ],
             "observability": observability_status(METRICS_PORT),
@@ -360,6 +433,7 @@ def create_app(
         return {
             "evidence_policy": "exact_policy_citations",
             "capability_scope": ["order_status", "policy_lookup"],
+            "tool_policy": policy_summary(),
             "guardrail_policy": GUARDRAIL,
             "feedback_review_required": True,
             "customer_scope_enforced": True,
@@ -368,7 +442,7 @@ def create_app(
 
     @app.post("/api/chat", response_model=ChatResponse)
     async def chat(request: ChatRequest) -> ChatResponse:
-        nonlocal agent, manager
+        nonlocal drafter
         question = request.message.strip()
         if not question:
             raise HTTPException(422, "Message must not be blank")
@@ -400,6 +474,7 @@ def create_app(
                 else None
             )
             policies = data.search(question)
+            hits: list[str] = []
             if order_request and not customer_id:
                 answer = (
                     "Enter a demo customer ID to check an order. "
@@ -413,58 +488,40 @@ def create_app(
                 answer = "I don't have verified information to answer that question."
                 cited = []
             else:
-                async with model_lock:
-                    if agent is None:
+                async with drafter_lock:
+                    if policy is None:
+                        raise HTTPException(503, "The service is not started")
+                    if drafter is None:
                         try:
-                            agent = agent_factory(data)
+                            drafter = drafter_factory(data, policy, telemetry.observers)
                         except RuntimeError as exc:
                             raise HTTPException(503, str(exc)) from exc
-                        manager = agent.capabilities.resolve("feedback_manager")
-                    prior = history[-2 * MAX_TURNS :]
-                    prompts: list[HumanMessage | AIMessage] = [
-                        (
-                            HumanMessage(content=text)
-                            if role == "user"
-                            else AIMessage(content=text)
-                        )
-                        for role, text in prior
-                    ]
-                    prompts.append(
-                        HumanMessage(content=evidence_prompt(question, policies, order))
+                prompts: list[BaseMessage] = [
+                    (
+                        HumanMessage(content=text)
+                        if role == "user"
+                        else AIMessage(content=text)
                     )
-                    token_customer = active_customer.set(customer_id)
-                    token_conversation = active_conversation.set(str(cid))
-                    token_order = active_order.set(order.id if order else None)
-                    try:
-                        draft = await asyncio.to_thread(agent.invoke, prompts)
-                        if not draft_is_grounded(draft, policies, order):
-                            log.warning(
-                                "Retrying assistant draft after evidence mismatch"
-                            )
-                            repair_prompts = [
-                                *prompts,
-                                AIMessage(content=draft.model_dump_json()),
-                                HumanMessage(
-                                    content=(
-                                        "Correct the previous draft so its bracket "
-                                        "citations and policy_ids match exactly and "
-                                        "contain only allowed policy IDs. Return a "
-                                        "new structured draft. If a verified order "
-                                        "is attached, state its exact status."
-                                    )
-                                ),
-                            ]
-                            draft = await asyncio.to_thread(
-                                agent.invoke, repair_prompts
-                            )
-                    except Exception as exc:
-                        log.exception("Customer assistant execution failed")
-                        raise HTTPException(502, "Assistant execution failed") from exc
-                    finally:
-                        active_customer.reset(token_customer)
-                        active_conversation.reset(token_conversation)
-                        active_order.reset(token_order)
-                allowed = {policy.id: policy for policy in policies}
+                    for role, text in history[-2 * MAX_TURNS :]
+                ]
+                prompts.append(
+                    HumanMessage(content=evidence_prompt(question, policies, order))
+                )
+                token_customer = active_customer.set(customer_id)
+                token_order = active_order.set(order.id if order else None)
+                token_hits = guardrail_hits.set(hits)
+                try:
+                    draft = await grounded_draft(
+                        drafter, prompts, policies, order, str(cid)
+                    )
+                except (AgloomError, XStructuredError, ValueError) as exc:
+                    log.exception("Customer assistant execution failed")
+                    raise HTTPException(502, "Assistant execution failed") from exc
+                finally:
+                    active_customer.reset(token_customer)
+                    active_order.reset(token_order)
+                    guardrail_hits.reset(token_hits)
+                allowed = {item.id: item for item in policies}
                 if not draft_is_grounded(draft, policies, order):
                     log.error("Assistant returned invalid citations or an empty answer")
                     raise HTTPException(502, "Assistant returned invalid evidence")
@@ -482,47 +539,40 @@ def create_app(
                 answer=answer,
                 order=order,
                 sources=cited,
-                guardrail={"status": "active", "policy": GUARDRAIL},
+                guardrail={
+                    "status": "intervened" if hits else "active",
+                    "policy": GUARDRAIL,
+                },
             )
 
     @app.post("/api/feedback", response_model=FeedbackResponse)
     async def feedback(request: FeedbackRequest) -> FeedbackResponse:
-        nonlocal manager, agent
         if request.message_id not in messages:
             raise HTTPException(404, "Message not found")
         correction = request.correction.strip() if request.correction else None
         if not request.rating and not correction:
             raise HTTPException(422, "A rating or nonblank correction is required")
-        async with model_lock:
-            if manager is None:
-                if agent is None:
-                    try:
-                        agent = agent_factory(data)
-                    except RuntimeError as exc:
-                        raise HTTPException(503, str(exc)) from exc
-                manager = agent.capabilities.resolve("feedback_manager")
+        manager = feedback_service()
         target = FeedbackTarget(
             type=FeedbackTargetType.GENERATION, id=str(request.message_id)
         )
-        received = []
+        submissions: list[tuple[FeedbackCategory, dict[str, str]]] = []
         if request.rating:
-            received.append(
-                await manager.submit(
-                    source=FeedbackSource.HUMAN,
-                    category=FeedbackCategory.RATING,
-                    target=target,
-                    payload={"rating": request.rating},
-                )
-            )
+            submissions.append((FeedbackCategory.RATING, {"rating": request.rating}))
         if correction:
-            received.append(
-                await manager.submit(
-                    source=FeedbackSource.HUMAN,
-                    category=FeedbackCategory.CORRECTION,
-                    target=target,
-                    payload={"corrected_text": correction},
-                )
+            submissions.append(
+                (FeedbackCategory.CORRECTION, {"corrected_text": correction})
             )
+        received = [
+            await manager.submit(
+                source=FeedbackSource.HUMAN,
+                category=category,
+                target=target,
+                payload=payload,
+                idempotency_key=feedback_key(request.message_id, category, payload),
+            )
+            for category, payload in submissions
+        ]
         return FeedbackResponse(
             feedback_ids=[event.feedback_id for event in received],
             status="received",
@@ -532,9 +582,9 @@ def create_app(
     async def feedback_for_message(message_id: UUID) -> list[dict[str, str]]:
         if message_id not in messages:
             raise HTTPException(404, "Message not found")
-        if manager is None:
-            return []
-        events = await manager.query(FeedbackQuery(target_id=str(message_id)))
+        events = await feedback_service().query(
+            FeedbackQuery(target_id=str(message_id))
+        )
         return [
             {
                 "feedback_id": str(event.feedback_id),
@@ -550,15 +600,12 @@ def create_app(
         request: ResolutionRequest,
         x_review_token: str | None = Header(default=None),
     ) -> dict[str, str]:
-        from hmac import compare_digest
-
         expected = os.getenv("REVIEW_TOKEN")
         if not expected:
             raise HTTPException(503, "Feedback review is not configured")
         if not x_review_token or not compare_digest(expected, x_review_token):
             raise HTTPException(403, "Review token required")
-        if manager is None:
-            raise HTTPException(404, "Feedback not found")
+        manager = feedback_service()
         try:
             event = await manager.get(feedback_id)
             if event is None:
@@ -569,8 +616,6 @@ def create_app(
                 feedback_id,
                 resolution={"approved": request.approved, "reason": request.reason},
             )
-        except HTTPException:
-            raise
         except (FeedbackLifecycleError, FeedbackNotFoundError) as exc:
             raise HTTPException(
                 409, "Feedback cannot be resolved in its current state"

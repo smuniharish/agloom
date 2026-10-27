@@ -1,0 +1,29 @@
+%% Inner loop (model and tools inside one execution) versus the outer Loop Engineering loop.
+flowchart TD
+  subgraph outer ["Outer loop · Loop Engineering"]
+    subgraph execute ["Execute · DIRECT or a topology · inner loop"]
+      direction LR
+      model("model")
+      tools[["tools"]]
+      model -- "tool calls" --> tools
+      tools -- "results" --> model
+    end
+    observe("Observe<br/><small>LoopObserver</small>")
+    evaluate("Evaluate the objective<br/><small>LoopEvaluator</small>")
+    decide{"Decide<br/><small>LoopController</small>"}
+    execute --> observe --> evaluate --> decide
+    decide -- "continue · retry · replan<br/>refresh · change_topology" --> execute
+  end
+  result(["LoopResult"])
+  pause("Pause for a human<br/><small>resume(config, feedback)</small>")
+  budgets["LoopPolicy budgets<br/>max_iterations · max_duration<br/>max_tool_calls · max_retries<br/>max_replans<br/><small>max_tool_calls also caps<br/>every inner loop</small>"]
+
+  decide -- "complete · stop · fail" --> result
+  decide -- "wait · human_intervention" --> pause
+  decide -.- budgets
+
+  class result api
+  class model model
+  class tools ext
+  class pause human
+  class budgets note

@@ -17,15 +17,27 @@ textarea { min-height: 126px; resize: vertical; border: 1px solid #385172; borde
 button { width: fit-content; border: 0; border-radius: 999px; padding: 12px 20px; background: #5eead4; color: #06231e; font-weight: 800; cursor: pointer; }
 button:disabled { opacity: .55; }
 .results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
-.summary, .results article:last-child { grid-column: 1 / -1; }
-.risk { display: inline-block; border-radius: 999px; padding: 6px 10px; background: #ff7b7222; color: #ff9b94; text-transform: uppercase; font-weight: 900; }
+.summary, .wide { grid-column: 1 / -1; }
+.verdict { display: inline-block; margin-right: 8px; border-radius: 999px; padding: 6px 12px; font-weight: 900; text-transform: uppercase; }
+.verdict.go { background: #5eead422; color: #7ff5e2; }
+.verdict.no_go { background: #ff7b7222; color: #ff9b94; }
+.risk { display: inline-block; border-radius: 999px; padding: 6px 10px; background: #f5c25122; color: #f7d27a; text-transform: uppercase; font-weight: 900; }
 .evidence { border-left: 3px solid #5eead4; padding-left: 14px; margin: 18px 0; }
 .evidence strong { color: #5eead4; }
+.status { font-weight: 800; }
+.status.recorded { color: #7ff5e2; }
+.status.awaiting_approval { color: #f7d27a; }
+.status.rejected, .status.expired, .status.outcome_unknown { color: #ff9b94; }
+.note { color: #aab9cf; }
+.review { display: grid; gap: 10px; margin-top: 12px; }
+input { border: 1px solid #385172; border-radius: 12px; padding: 10px 12px; background: #08101c; color: inherit; font: inherit; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+button.secondary { background: #1d2f4b; color: #e7edf7; }
 .checks { display: flex; gap: 10px; flex-wrap: wrap; }
 .checks span { background: #123d3a; color: #7ff5e2; border-radius: 999px; padding: 8px 12px; }
 .error { color: #ff9b94; }
 @media (max-width: 700px) {
   main { padding-top: 36px; }
   .results { grid-template-columns: 1fr; }
-  .summary, .results article:last-child { grid-column: auto; }
+  .summary, .wide { grid-column: auto; }
 }

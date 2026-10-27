@@ -1,0 +1,40 @@
+---
+config:
+  elk:
+    nodePlacementStrategy: NETWORK_SIMPLEX
+---
+%% Architecture overview: from create_agent to capabilities, with the systems around a run.
+flowchart TD
+  app("Your application")
+  factory(["create_agent(...)"])
+  agent(["Agent<br/><small>a LangChain Runnable</small>"])
+  loop("Loop Engineering<br/><small>LangGraph functional API</small>")
+  select("Execution selection<br/><small>task analysis + strategy</small>")
+  direct("DIRECT<br/><small>one model call</small>")
+  topo("One of eight topologies<br/><small>LangGraph graphs of<br/>create_agent sub-agents</small>")
+
+  subgraph stack ["Middleware on every tool-capable agent"]
+    routing("Capability routing")
+    yours("Your LangChain middleware")
+    policy("PolicyManager")
+    routing --> yours --> policy
+  end
+
+  caps[["Capabilities<br/><small>local tools · application capabilities<br/>MCP servers via mcp-capability-router</small>"]]
+  eco("Ecosystem integrations<br/><small>FeedbackManager · RefreshEngine<br/>langgraph-xai · xstructured</small>")
+  observers("Observers<br/><small>logging · Prometheus · Langfuse</small>")
+  ckpt[("Checkpointer<br/><small>LangGraph</small>")]
+  barrier[("agentbarrier store<br/><small>approvals · exactly-once<br/>receipts</small>")]
+
+  app --> factory --> agent --> loop --> select
+  select --> direct
+  select --> topo --> stack
+  policy --> caps
+  factory -.- eco
+  agent -.- observers
+  loop -.- ckpt
+  policy -.- barrier
+
+  class factory,agent api
+  class direct,topo model
+  class app,caps,eco,observers,ckpt,barrier ext

@@ -1,0 +1,19 @@
+%% Blackboard topology: parallel contributors write to a shared board, then synthesis.
+flowchart TD
+  start@{ shape: sm-circ }
+  c0("contributor_0_&lt;name&gt;")
+  c1("contributor_1_&lt;name&gt;")
+  c2("contributor_2_&lt;name&gt;")
+  board[("shared board<br/><small>one entry per contributor</small>")]
+  synthesize("synthesize")
+  stop@{ shape: fr-circ }
+  note["Contributors run in parallel, at most max_workers at a time"]
+
+  start --> c0 & c1 & c2
+  c0 & c1 & c2 --> board
+  board --> synthesize --> stop
+  stop ~~~ note
+
+  class c0,c1,c2,synthesize model
+  class board ext
+  class note note

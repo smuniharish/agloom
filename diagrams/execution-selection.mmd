@@ -1,0 +1,30 @@
+%% Execution selection: the strategy's priority order, the allow-list, and when DIRECT is allowed.
+flowchart TD
+  task(["Task of the iteration"])
+  route("Route capabilities")
+  fixed{"One topology<br/>in pattern=?"}
+  runfixed("Run that topology<br/><small>no task analysis</small>")
+  analyze{{"Analyze the task<br/><small>TaskAnalysis · missing capabilities<br/>are flagged, never improvised</small>"}}
+  ladder["<b>Preferred topology: first match</b><br/>requires_composition → Hybrid<br/>requires_shared_workspace → Blackboard<br/>requires_handoffs → Swarm<br/>requires_parallelism → Planner<br/>requires_delegation → Supervisor<br/>requires_decomposition → Planner<br/>requires_validation, complexity ≥ 4 → Reflection<br/>requires_ordering, estimated_steps ≥ 3 → Pipeline<br/>requires_tools → ReAct"]
+  directok{"DIRECT<br/>allowed?"}
+  direct("DIRECT")
+  inlist{"In the<br/>allow-list?"}
+  preferred("Run the preferred<br/>topology")
+  best("Run the highest-scoring<br/>allowed topology<br/><small>ties: allow-list order</small>")
+  rules["DIRECT is allowed with pattern=None and for recursive children,<br/>whose allow-list is allowed_nested_topologies. After a change_topology<br/>decision, the requested topology is the only candidate."]
+
+  task --> route --> fixed
+  fixed -- yes --> runfixed
+  fixed -- no --> analyze --> ladder
+  ladder -- "no match" --> directok
+  ladder -- "match" --> inlist
+  directok -- yes --> direct
+  directok -- no --> best
+  inlist -- "yes, or no allow-list" --> preferred
+  inlist -- no --> best
+  best ~~~ rules
+
+  class analyze model
+  class runfixed,direct,preferred,best ok
+  class ladder list
+  class rules note

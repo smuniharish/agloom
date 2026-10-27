@@ -1,58 +1,67 @@
-"""Hybrid topology composing isolated child LangGraph topologies."""
+"""Hybrid: an explicit sequence of two to four child topologies."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import END, START
-from langgraph.graph import StateGraph as StateGraphType
+from langchain_core.messages import AnyMessage
+from langgraph.graph import END, START, StateGraph
+from typing_extensions import TypedDict
 
-from agloom.errors import ConfigurationError
+from agloom.errors import CompilationError
 from agloom.models import TopologyName
-from agloom.topology._shared import (
-    child_input,
-    compile_graph,
-    extract_output,
-    node,
-    without_checkpointer_thread,
-)
-from agloom.topology.base import ExecutionState, TopologyArtifact, TopologyBuildContext
+from agloom.topology._shared import State, node, topology_answer, topology_input
+from agloom.topology.base import TopologyArtifact, TopologyBuildContext, compose_prompt
+
+
+class HybridState(TypedDict, total=False):
+    """State of the Hybrid topology."""
+
+    task: str
+    messages: list[AnyMessage]
+    context: str | None
+    output: str
+    loop: dict[str, Any]
 
 
 class HybridTopology:
+    """Runs the configured child topologies in order, passing each result forward.
+
+    Graph nodes: one `child_<i>_<topology>` node per child topology.
+    """
+
     name = TopologyName.HYBRID
 
     def build(self, context: TopologyBuildContext) -> TopologyArtifact:
+        """Compile the Hybrid graph."""
         if context.compile_child is None:
-            raise ConfigurationError("Hybrid compilation requires a child compiler")
-        if len(context.composition) < 2:
-            raise ConfigurationError("Hybrid requires at least two child topologies")
-        builder = StateGraphType[Any](ExecutionState)
-        compiled = [context.compile_child(topology) for topology in context.composition]
+            raise CompilationError("Hybrid compilation requires a child compiler")
+        builder = StateGraph[Any](HybridState)
         previous = START
-        for index, child in enumerate(compiled):
-            node_name = f"child_{index}_{context.composition[index].value}"
+        for index, child in enumerate(context.composition):
+            child_id = f"child_{index}_{child.value}"
+            react = child is TopologyName.REACT
 
-            def make_child(child_graph: Any):
-                def run(state: ExecutionState, config: RunnableConfig):
-                    result = child_graph.invoke(
-                        child_input(state),
-                        config=without_checkpointer_thread(config),
-                    )
-                    return {"output": extract_output(result)}
+            def build_input(state: State, react: bool = react) -> dict[str, Any]:
+                prior = state.get("output")
+                child_context = compose_prompt(
+                    state.get("context"),
+                    f"Result of the previous stage:\n{prior}" if prior else None,
+                )
+                return topology_input(
+                    react, state["task"], state.get("messages") or [], child_context
+                )
 
-                async def arun(state: ExecutionState, config: RunnableConfig):
-                    result = await child_graph.ainvoke(
-                        child_input(state),
-                        config=without_checkpointer_thread(config),
-                    )
-                    return {"output": extract_output(result)}
-
-                return node(run, arun)
-
-            builder.add_node(node_name, make_child(child))
-            builder.add_edge(previous, node_name)
-            previous = node_name
+            builder.add_node(
+                child_id,
+                node(
+                    child_id,
+                    build_input,
+                    context.compile_child(child),
+                    lambda state, result, react=react: topology_answer(react, result),
+                ),
+            )
+            builder.add_edge(previous, child_id)
+            previous = child_id
         builder.add_edge(previous, END)
-        return TopologyArtifact(self.name, compile_graph(context, builder))
+        return TopologyArtifact(self.name, builder.compile(**context.compile_options()))

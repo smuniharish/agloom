@@ -1,307 +1,285 @@
 # Agloom
 
-## Production-grade Python agent harness that automatically classifies tasks, optimizes execution, and scales orchestration across eight specialized topologies.
+**The production-grade agent harness for LangChain and LangGraph.** Agloom
+chooses the right execution structure for every request, governs every tool
+call with explicit policies, and keeps working until the *objective* is met,
+not just until a run finishes.
 
-Agloom is a production-grade Python agent harness that automatically classifies
-tasks, optimizes execution, and scales orchestration from lightweight DIRECT
-execution to eight specialized LangGraph topologies for efficient, reliable
-agent workloads.
+[![PyPI version](https://img.shields.io/pypi/v/agloom)](https://pypi.org/project/agloom/)
+[![Python versions](https://img.shields.io/pypi/pyversions/agloom)](https://pypi.org/project/agloom/)
+[![License](https://img.shields.io/pypi/l/agloom)](https://github.com/smuniharish/agloom/blob/master/LICENSE)
+[![Documentation](https://readthedocs.org/projects/agloom/badge/?version=latest)](https://agloom.readthedocs.io/en/latest/)
+[![CI](https://github.com/smuniharish/agloom/actions/workflows/ci.yml/badge.svg)](https://github.com/smuniharish/agloom/actions/workflows/ci.yml)
 
-[Documentation](https://agloom.readthedocs.io/en/latest/) |
-[Why Agloom?](https://agloom.readthedocs.io/en/latest/guides/why-agloom/) |
-[Quickstart](https://agloom.readthedocs.io/en/latest/guides/quickstart/) |
-[Examples](https://agloom.readthedocs.io/en/latest/examples/overview/) |
-[API reference](https://agloom.readthedocs.io/en/latest/api/reference/) |
-[Agent Skills](https://agloom.readthedocs.io/en/latest/agent-skills/) |
-[GitHub](https://github.com/smuniharish/agloom)
+[Documentation](https://agloom.readthedocs.io/en/latest/) ·
+[Quickstart](https://agloom.readthedocs.io/en/latest/getting-started/quickstart/) ·
+[Agloom and Deep Agents](https://agloom.readthedocs.io/en/latest/getting-started/deep-agents/) ·
+[Examples](https://agloom.readthedocs.io/en/latest/examples/overview/) ·
+[API reference](https://agloom.readthedocs.io/en/latest/api/agent/) ·
+[Changelog](https://github.com/smuniharish/agloom/blob/master/CHANGELOG.md)
 
-![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![LangChain 1.x](https://img.shields.io/badge/LangChain-1.x-1C3C3C)
-![LangGraph 1.2](https://img.shields.io/badge/LangGraph-1.2-1C3C3C)
-![Apache License 2.0](https://img.shields.io/badge/License-Apache--2.0-blue)
+## What and why
 
----
+Calling a model is easy. Running agents in production is not: requests range
+from "hello" to multi-step investigations, tools have real side effects, and a
+run that ends without errors has not necessarily done what was asked.
 
-Building one LLM call is easy. Building an agent that stays predictable when a
-task needs tools, planning, multiple workers, long context, human approval,
-remote MCP capabilities, or durable execution is not.
+Agloom is one `create_agent` call that returns a LangChain `Runnable`. For
+every request it analyzes the task against the tools it can actually use and
+runs it **DIRECT** (one model call) or in one of **eight bounded LangGraph
+topologies**. Every tool call passes through an **agentbarrier policy**, and
+every execution runs inside **Loop Engineering**, a deterministic outer loop
+that judges the objective, adapts within limits, and stops for explicit,
+auditable reasons.
 
-Agloom gives applications one construction API:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/smuniharish/agloom/master/docs/assets/diagrams/architecture-dark.png">
+  <img alt="Agloom architecture" src="https://raw.githubusercontent.com/smuniharish/agloom/master/docs/assets/diagrams/architecture-light.png" width="650">
+</picture>
 
-```python
-from agloom import create_agent
+## Key features
 
-agent = create_agent(model=model, tools=tools)
+- **Task-aware execution.** DIRECT or ReAct, Supervisor, Pipeline, Planner,
+  Reflection, Swarm, Blackboard, or Hybrid, chosen per request from a
+  structured analysis, or pinned and constrained with `pattern=`.
+- **Policy-governed tools.** Allow, deny, or require approval for every tool
+  call, judged on the validated arguments the tool actually receives;
+  consequential tools execute exactly once per business key, with audit
+  receipts; tools a policy always denies are never shown to the model.
+- **Loop Engineering.** Objective evaluation; iteration, duration, tool-call,
+  retry, and replan budgets; stagnation and oscillation detection;
+  policy-bounded retry, replan, refresh, topology change, and human
+  intervention; checkpointed iterations. One-shot by default, at no extra cost.
+- **One capability catalog.** Local LangChain tools, application services, and
+  MCP tools, resources, and prompts, filtered and ranked per request.
+- **Standard LangChain middleware.** ContextSage, BehaviorWeave, Deep Agents,
+  and LangChain middleware apply to every tool-capable agent in every topology.
+- **Production runtime.** Checkpointed resume with thread authorization,
+  human-in-the-loop, streaming, cooperative cancellation, bounded recursion,
+  structured output, Prometheus metrics, Langfuse traces, and structured logs.
+
+## Install
+
+```bash
+pip install agloom
+pip install "agloom[postgres]"          # PostgreSQL checkpointer and policy store
+pip install "agloom[postgres-binary]"   # the same, without a system libpq
+pip install "agloom[sqlite]"            # SQLite checkpointer
 ```
 
-For each request, Agloom can keep simple work on lightweight **DIRECT
-execution** or select one of eight bounded execution topologies when
-orchestration is useful. Explicit developer configuration always wins.
-
-> **Agloom provides eight execution topologies plus a direct execution mode.**
-> DIRECT is not a topology.
-
-## Why teams use Agloom
-
-| Agent engineering problem | Agloom's answer |
-|---|---|
-| Every request pays the cost of a planner or graph | Straightforward requests use DIRECT execution |
-| A single workflow becomes a maze of conditional branches | Eight topologies provide clear, reusable execution semantics |
-| Automatic routing plans work the agent cannot perform | Selection uses the actual tool and capability inventory |
-| Local tools, application services, and MCP become separate systems | One policy-aware capability catalog routes all three |
-| Recursive and multi-agent work grows without bounds | Explicit depth, task, worker, topology, and time limits |
-| Pause, resume, streaming, and cancellation are added ad hoc | LangGraph-native runtime controls are available through the agent |
-| Model, tool, and graph activity is difficult to connect | Structured events, Prometheus, Grafana, Langfuse, and langgraph-xai |
-| Typed responses require custom parsing and repair | xstructured validates and repairs structured output |
+Agloom requires Python 3.12 or later. Install the LangChain integration for
+your model provider too, for example `pip install langchain-openai`.
 
 ## Quickstart
-
-Install Agloom and your model provider:
-
-```bash
-uv add agloom langchain-openai
-```
-
-Or with pip:
-
-```bash
-python -m pip install agloom langchain-openai
-```
-
-Create an agent with a real LangChain model and tool:
 
 ```python
 import os
 
-from agloom import create_agent
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
+from agloom import create_agent
+
 
 @tool
-def multiply(left: int, right: int) -> int:
-    """Multiply two integers."""
-    return left * right
+def order_status(order_id: str) -> str:
+    """Return the shipping status of an order, for example A-1001."""
+    statuses = {
+        "A-1001": "delivered on 2 October",
+        "A-1002": "in transit, arriving 8 October",
+    }
+    return statuses.get(order_id.strip().upper(), "unknown order")
 
 
-model = ChatOpenAI(
-    model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
-    api_key=os.environ["OPENAI_API_KEY"],
-)
+# Any LangChain chat model works. ChatOpenAI reads OPENAI_API_KEY, and
+# OPENAI_BASE_URL for OpenAI-compatible endpoints.
+model = ChatOpenAI(model=os.environ["OPENAI_MODEL"])
+agent = create_agent(model=model, tools=[order_status])
 
-agent = create_agent(model=model, tools=[multiply])
-response = agent.invoke("Use multiply to calculate 17 times 23.")
-
-print(response.content)
+print(agent.invoke("Write a one-line welcome for a new customer.").content)
+print(agent.invoke("Where is order A-1002?").content)
 ```
 
-Representative result:
+Output from a live run:
 
 ```text
-17 × 23 = 391.
+Welcome to our community—we’re delighted to have you as a new customer!
+Order **A-1002** is **in transit** and is expected to arrive on **8 October**.
 ```
 
-The executable repository example also asserts that `multiply(17, 23)` is
-called exactly once and that the semantic answer contains `391`.
+The greeting runs DIRECT with one answer call; the order question runs the
+ReAct topology, which calls `order_status` once. Pin a topology with
+`pattern="react"` to skip the analysis call, or constrain the choice with an
+allow-list such as `pattern=["react", "reflection"]`.
 
-## Automatic when useful, explicit when required
+## Policies in brief
+
+Policy is enforced in code, between the model and every tool, by
+[agentbarrier](https://pypi.org/project/agentbarrier/). Rules are ordered, the
+first match wins, and anything no rule allows is denied. Here a refund over 100
+pauses the run until a reviewer approves it, and then executes exactly once:
 
 ```python
-# Agloom may select DIRECT or any of the eight topologies.
-automatic = create_agent(model=model, tools=tools)
-
-# One explicit topology bypasses automatic selection.
-planner = create_agent(
-    model=model,
-    tools=tools,
-    pattern="planner",
+from agentbarrier import Decision
+from agentbarrier.runtime import (
+    ArgumentCondition,
+    ConditionOperator,
+    PolicyEffect,
+    PolicyRule,
+    RuntimePolicy,
+    SQLiteRuntimeStore,
 )
+from langgraph.checkpoint.memory import InMemorySaver
 
-# An allow-list constrains selection to one of these candidates.
-constrained = create_agent(
-    model=model,
-    tools=tools,
-    pattern=["planner", "supervisor"],
-)
-```
+from agloom import ExecutionPaused, PolicyManager
 
-An allow-list is not a composition. Use the Hybrid topology explicitly when a
-task should pass through multiple child topologies:
 
-```python
-hybrid = create_agent(
-    model=model,
-    tools=tools,
-    pattern="hybrid",
-    composition=["react", "reflection"],
-)
-```
+@tool
+def refund_order(order_id: str, amount: float, request_id: str) -> str:
+    """Refund an order. request_id uniquely identifies the refund request."""
+    return f"refunded {amount} EUR for order {order_id}"
 
-## Eight topologies, one runtime
 
-| Topology | Best suited for |
-|---|---|
-| **ReAct** | Reasoning with tool calls and observations |
-| **Supervisor** | Routing work across a finite set of specialist workers |
-| **Pipeline** | Ordered stages with explicit result propagation |
-| **Planner** | Decomposing a task into bounded subtasks and aggregating results |
-| **Reflection** | Drafting, evaluating, and revising an answer |
-| **Swarm** | Bounded handoffs between peer workers |
-| **Blackboard** | Collaboration through a versioned shared workspace |
-| **Hybrid** | Explicit composition of two to four non-Hybrid topologies |
-
-Every topology shares the same lifecycle, events, capability routing,
-checkpoint integration, streaming surface, and recursion policy.
-
-## One capability catalog
-
-Agloom treats capabilities as independent from topology:
-
-```text
-Local LangChain tools ─┐
-Application services ──┼─> policy ─> retrieval ─> reranking ─> selection
-MCP capabilities ──────┘
-```
-
-```python
-agent = create_agent(
-    model=model,
-    tools=local_tools,
-    capabilities={"document_store": document_store},
-    mcp_client=mcp_client,
-    mcp_server_name="operations",
-    capability_policy=policy,
-    capability_embeddings=embeddings,
-    capability_retriever=retriever,
-    capability_reranker=reranker,
-    max_selected_capabilities=12,
-)
-
-selection = await agent.aroute_capabilities(
-    "Find the deployment guide and current service status."
-)
-print(selection.names)
-```
-
-Policy filtering runs first. Optional semantic retrieval and reranking then
-reduce the catalog to the capabilities relevant to the request. If a task
-requires a capability that is unavailable, Agloom fails explicitly instead of
-asking the model to pretend.
-
-## Production controls without a new abstraction
-
-```python
-from agloom import RecursionPolicy
-
-agent = create_agent(
-    model=model,
-    tools=tools,
-    pattern="planner",
-    recursion=True,
-    recursion_policy=RecursionPolicy(
-        max_depth=2,
-        max_subtasks=8,
-        max_workers=4,
-        max_execution_time=120.0,
+policy = PolicyManager(
+    policy=RuntimePolicy(
+        version="support-v1",
+        rules=(
+            PolicyRule(
+                "review large refunds",
+                PolicyEffect.REQUIRE_APPROVAL,
+                tool="refund_order",
+                conditions=(ArgumentCondition("amount", ConditionOperator.GT, 100),),
+            ),
+            PolicyRule("allow refunds", PolicyEffect.ALLOW, tool="refund_order"),
+            PolicyRule("allow status lookups", PolicyEffect.ALLOW, tool="order_status"),
+        ),
     ),
-    observers=[prometheus, langfuse],
-    structured_output_schema=IncidentReport,
+    store=SQLiteRuntimeStore("agentbarrier.db"),
+    consequential={"refund_order": "request_id"},  # business idempotency key
 )
+support = create_agent(
+    model=model,
+    tools=[order_status, refund_order],
+    policy=policy,
+    checkpointer=InMemorySaver(),
+    checkpoint_authorizer=lambda thread_id: thread_id.startswith("ticket-"),
+)
+
+config = {"configurable": {"thread_id": "ticket-4711"}}
+try:
+    support.invoke("Refund 240 EUR for order A-1001 with request id R-88.", config)
+except ExecutionPaused as paused:
+    action_id = paused.interrupts[0].value["action_id"]
+    policy.store.decide(action_id, Decision.APPROVE, decided_by="alice")
+    print(support.resume(config).content)  # the approved refund runs exactly once
 ```
 
-The same runnable API can provide:
-
-- synchronous and asynchronous invocation;
-- streaming;
-- cooperative cancellation;
-- bounded recursive child execution;
-- LangGraph checkpointing, interrupts, and human approval;
-- typed structured output;
-- agent-local explainability through `agent.xai`;
-- lifecycle, model, retriever, and tool telemetry.
-
-Agloom does not require LangSmith, a database, containers, or hosted
-infrastructure. Applications opt into the infrastructure their capabilities
-need.
-
-## Integrated ecosystem
-
-Agloom installs and integrates these capability packages:
-
-| Capability | Package |
-|---|---|
-| Feedback lifecycle | `feedback-manager` |
-| Behavioral policies | `behaviorweave` |
-| Context management | `contextsage` |
-| MCP discovery and routing | `mcp-capability-router` |
-| Source refresh | `refresh-engine` |
-| Explainability | `langgraph-xai` |
-| Structured output | `xstructured` |
-
-Their supported configuration is exposed through `create_agent()` rather than
-through a parallel service layer. See the [capability
-guide](https://agloom.readthedocs.io/en/latest/concepts/capabilities/).
-
-## Real examples, not only toy prompts
-
-The repository includes focused scripts for every topology and integration,
-plus five complete FastAPI/React applications:
-
-| Application | Demonstrates |
-|---|---|
-| Enterprise Knowledge Assistant | Retrieval, citations, ingestion, feedback, and observability |
-| QA Customer Chatbot | Support tools, operational data, behavioral guardrails, and feedback |
-| RCA Generator | Incident evidence, structured analysis, and approval workflows |
-| Web Compliance Auditor | Real Playwright, Filesystem, and Everything MCP servers; Ollama embeddings; pgvector |
-| Engineering Change Investigator | MCP evidence, engineering records, PostgreSQL/pgvector, durable integration state |
-
-`examples/24_complete_configuration.py` constructs compatible agents that
-collectively exercise **every public
-`create_agent()` parameter** and fails if a newly added parameter is not
-demonstrated.
-
-See [examples and verified
-results](https://agloom.readthedocs.io/en/latest/examples/overview/) for executable
-snippets, semantic assertions, and expected outcomes.
-
-## Agent Skills
-
-Agloom publishes one portable
-[Agent Skill](https://agloom.readthedocs.io/en/latest/agent-skills/) for coding
-agents that integrate, configure, debug, test, or extend the framework:
-
-```bash
-npx skills add https://github.com/smuniharish/agloom/tree/master/agloom-skills/skills/agloom
+```text
+Refund completed: **240 EUR** for order **A-1001**. Request ID: **R-88**.
 ```
 
-The canonical distribution works with Agent Skills-compatible hosts, including
-Claude Code, Codex, Cursor, and GitHub Copilot. It provides one `SKILL.md` plus
-focused architecture, configuration, integration, and troubleshooting
-references—without maintaining host-specific copies.
+The same policy governs tools contributed by middleware and the calls your own
+code makes with `execute_capability`. Side effects fail closed: if a
+consequential tool raises, its outcome is recorded as unknown and the action is
+held for reconciliation in agentbarrier instead of being retried blindly. A
+checkpointed run pauses meanwhile and resumes once an operator has reconciled
+the action.
 
-## Documentation
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/smuniharish/agloom/master/docs/assets/diagrams/policy-enforcement-dark.png">
+  <img alt="Policy enforcement" src="https://raw.githubusercontent.com/smuniharish/agloom/master/docs/assets/diagrams/policy-enforcement-light.png" width="871">
+</picture>
 
-- [Why Agloom?](https://agloom.readthedocs.io/en/latest/guides/why-agloom/)
-- [Installation](https://agloom.readthedocs.io/en/latest/guides/installation/)
-- [Quickstart](https://agloom.readthedocs.io/en/latest/guides/quickstart/)
-- [Execution topologies](https://agloom.readthedocs.io/en/latest/concepts/topologies/)
-- [Capabilities](https://agloom.readthedocs.io/en/latest/concepts/capabilities/)
-- [Runtime and human approval](https://agloom.readthedocs.io/en/latest/concepts/runtime/)
-- [Observability](https://agloom.readthedocs.io/en/latest/concepts/observability/)
-- [`create_agent()` API reference](https://agloom.readthedocs.io/en/latest/api/create-agent/)
-- [Agent Skills](https://agloom.readthedocs.io/en/latest/agent-skills/)
-- [Hosted documentation](https://agloom.readthedocs.io/en/latest/)
-- [GitHub repository](https://github.com/smuniharish/agloom)
+## Loop Engineering in brief
 
-## Compatibility
+A successful execution is not the same as an achieved objective. Loop
+Engineering wraps any execution in an outer loop that evaluates the result
+against the objective, carries feedback into the next iteration as data, and
+stops with a typed termination reason:
 
-Agloom targets **Python 3.12** and is designed as a production-grade,
-embeddable framework. It does not require LangSmith, containers, a database, or
-a hosted control plane.
+```python
+from agloom import LoopPolicy
 
-## Author
+looping = create_agent(
+    model=model,
+    tools=[order_status],
+    loop_policy=LoopPolicy(max_iterations=3, allow_replan=True, max_replans=1),
+)
+result = looping.invoke_loop(
+    "Report the status of orders A-1001 and A-1002 as a two-row Markdown table."
+)
+print(result.state.iteration, result.state.termination_reason)
+```
 
-**S Muni Harish**  
-[samamuniharish@gmail.com](mailto:samamuniharish@gmail.com)
+```text
+1 objective_satisfied
+```
 
-Agloom is licensed under the Apache License 2.0.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/smuniharish/agloom/master/docs/assets/diagrams/inner-outer-loop-dark.png">
+  <img alt="Inner and outer loops" src="https://raw.githubusercontent.com/smuniharish/agloom/master/docs/assets/diagrams/inner-outer-loop-light.png" width="620">
+</picture>
+
+Budgets bound iterations, active time, tool calls, retries, and replans;
+stagnation and oscillation are detected deterministically; and retry, replan,
+refresh, topology change, and human intervention happen only when the
+`LoopPolicy` allows them. The default policy is one-shot and adds no model
+calls. Read [why Loop Engineering matters](https://agloom.readthedocs.io/en/latest/concepts/loop-engineering/).
+
+## DIRECT plus eight topologies
+
+| Mode | Use it when |
+|---|---|
+| **DIRECT** | The request needs no tools or orchestration: one model call |
+| **ReAct** | Reasoning interleaved with tool calls |
+| **Supervisor** | A coordinator should delegate to specialist workers |
+| **Pipeline** | Work must pass through fixed, ordered stages |
+| **Planner** | The task decomposes into dependent steps; independent steps run in parallel |
+| **Reflection** | A draft should be reviewed and revised until approved |
+| **Swarm** | Peers should hand control to each other |
+| **Blackboard** | Specialists contribute to a shared board before synthesis |
+| **Hybrid** | Two to four topologies must run in sequence |
+
+Every worker in every topology is a tool-capable LangChain agent with the
+routed tools, your middleware, and the policy. See
+[Topologies](https://agloom.readthedocs.io/en/latest/concepts/topologies/).
+
+## Agloom and Deep Agents
+
+[Deep Agents](https://docs.langchain.com/oss/python/deepagents/overview) is
+LangChain's opinionated single-agent harness, with a filesystem, sub-agents,
+memory, and skills, where the model drives. Agloom is a task-aware execution
+harness with bounded topologies, policy-governed side effects, and Loop
+Engineering. They compose in both directions: Deep Agents middleware plugs into
+Agloom through `middleware=`, and an Agloom agent can serve as a Deep Agents
+`CompiledSubAgent`. Read the
+[dated, fact-checked comparison](https://agloom.readthedocs.io/en/latest/getting-started/deep-agents/).
+
+## Learn more
+
+- **Documentation:** [agloom.readthedocs.io](https://agloom.readthedocs.io/en/latest/),
+  including [Why Agloom](https://agloom.readthedocs.io/en/latest/getting-started/why-agloom/),
+  [Policies and approvals](https://agloom.readthedocs.io/en/latest/concepts/policies/),
+  and [Production deployment](https://agloom.readthedocs.io/en/latest/guides/production/).
+- **Examples:** [47 runnable examples](https://github.com/smuniharish/agloom/tree/master/examples),
+  each verified against a live model.
+- **Reference applications:** seven complete FastAPI and React applications,
+  from a [customer-support chatbot](https://github.com/smuniharish/agloom/tree/master/examples/qa_customer_chatbot)
+  to an [autonomous product studio](https://github.com/smuniharish/agloom/tree/master/examples/autonomous_product_studio)
+  with approvals and background jobs. See the
+  [examples overview](https://agloom.readthedocs.io/en/latest/examples/overview/).
+- **Agent Skill:** teach your coding agent to build with Agloom; see
+  [Agent Skills](https://agloom.readthedocs.io/en/latest/agent-skills/).
+
+## Contributing
+
+Contributions are welcome. Read
+[CONTRIBUTING.md](https://github.com/smuniharish/agloom/blob/master/CONTRIBUTING.md)
+for the development setup and checks, and report vulnerabilities privately as
+described in [SECURITY.md](https://github.com/smuniharish/agloom/blob/master/SECURITY.md).
+
+## License
+
+Agloom is licensed under the
+[Apache License 2.0](https://github.com/smuniharish/agloom/blob/master/LICENSE).
+Created by S Muni Harish.
